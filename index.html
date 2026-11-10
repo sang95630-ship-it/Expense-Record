@@ -89,7 +89,7 @@ h2{font-size:16px;margin:28px 0 10px}
 .date-btn .today{margin-left:auto;font-size:12px;color:var(--muted)}
 .amount-row{display:flex;align-items:baseline;gap:8px;border-bottom:1.5px solid var(--line);padding:2px 2px 8px}
 .amount-row:focus-within{border-color:var(--primary)}
-.cur-sel{border:0;background:var(--surface-2);color:var(--ink);font-size:16px;font-weight:500;border-radius:10px;padding:6px 8px;max-width:9.5em;flex-shrink:0}
+.cur-sel{border:0;background:var(--surface-2);color:var(--ink);font-size:16px;font-weight:500;border-radius:10px;padding:6px 8px;flex-shrink:0}
 .cur-sel:disabled{opacity:.7;appearance:none;-webkit-appearance:none;background:none;padding-left:0}
 .fx-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:14px;color:var(--muted)}
 .fx-row input{width:7.5em;padding:6px 10px;font-variant-numeric:tabular-nums}
@@ -212,7 +212,7 @@ a{color:inherit}
         <div class="fx-row" id="fxRow" hidden>匯率：1 <span id="fxCode"></span> =
           <input class="text-in" id="fxRate" type="text" inputmode="decimal" aria-label="匯率"> HKD
           <b id="fxHkd"></b><span class="small" id="fxSrc" style="flex-basis:100%"></span></div>
-        <input class="text-in" id="remark" type="text" placeholder="備註（選填），例如店名或用途" autocomplete="off">
+        <input class="text-in" id="remark" name="expense-remark" type="text" placeholder="備註（選填），例如店名或用途" autocomplete="off" data-lpignore="true" data-1p-ignore>
         <p class="hint" id="fixedHint" hidden>固定項目由下個月 1 號起自動入帳；加價或取消可到 Expense 頁修改。</p>
         <button class="primary" id="saveBtn">儲存支出</button>
       </div>
@@ -242,16 +242,16 @@ a{color:inherit}
 
     <!-- Settings -->
     <section class="page" id="p-settings" hidden>
-      <div class="card">
+      <form class="card" id="cfgForm" autocomplete="off" onsubmit="return false">
         <label class="field">Apps Script Web App 連結
-          <input class="text-in" id="cfgUrl" type="url" placeholder="https://script.google.com/macros/s/…/exec">
+          <input class="text-in" id="cfgUrl" name="gas-url" type="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec">
         </label>
         <label class="field">密碼（與 Code.gs 內 TOKEN 相同）
-          <input class="text-in" id="cfgToken" type="password" autocomplete="off">
+          <input class="text-in" id="cfgToken" name="gas-token" type="password" autocomplete="new-password">
         </label>
-        <button class="primary" id="cfgSave">連結並測試</button>
+        <button class="primary" id="cfgSave" type="button">連結並測試</button>
         <p class="small muted" id="cfgStatus"></p>
-      </div>
+      </form>
       <h2>首次設定步驟</h2>
       <ol class="steps">
         <li>建立一個新的 Google Sheet，打開「擴充功能 → Apps Script」，貼上 Code.gs 並修改 TOKEN。</li>
@@ -471,6 +471,8 @@ $('#amount').addEventListener('keydown', e => { if (e.key === 'Enter') $('#remar
 $('#remark').addEventListener('keydown', e => { if (e.key === 'Enter') save(); });
 $('#saveBtn').addEventListener('click', save);
 
+// 防止瀏覽器密碼管理員把設定頁的 /exec 連結當成「使用者名稱」自動填入備註
+function cleanRemark(){ const v = $('#remark').value.trim(); return /^https:\/\/script\.google\.com\/macros\//.test(v) ? '' : v; }
 async function save(){
   const amt = parseFloat($('#amount').value);
   if (!S.item) return toast('請先選擇項目');
@@ -480,7 +482,7 @@ async function save(){
   const rate = cur === 'HKD' ? 1 : parseFloat($('#fxRate').value);
   if (!(rate > 0)) return toast('請輸入有效匯率');
   const orig = round2(amt);
-  const rec = { id:uid(), date:S.date, section:S.section, item:S.item, amount:round2(orig*rate), remark:$('#remark').value.trim(),
+  const rec = { id:uid(), date:S.date, section:S.section, item:S.item, amount:round2(orig*rate), remark:cleanRemark(),
     currency:cur, fxRate:rate, origAmount:orig };
   const btn = $('#saveBtn'); btn.disabled = true;
   try {
@@ -710,6 +712,7 @@ $$('.overlay').forEach(o => o.addEventListener('click', e => { if (e.target === 
 window.addEventListener('online', flushQ);
 
 renderTabs(); renderDate(); updateSync(); setCur('HKD');
+setTimeout(() => { if ($('#remark').value && !cleanRemark()) $('#remark').value = ''; }, 800);
 if (!cfg.url) go('settings'); else { go('input'); flushQ(); }
 </script>
 </body>
