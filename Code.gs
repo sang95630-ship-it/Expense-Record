@@ -1,13 +1,19 @@
 /**** 記帳簿 後端：貼到 Google Sheet → 擴充功能 → Apps Script ****/
 const TOKEN = 'change-me-to-a-long-random-string'; // 改成你自己的密碼，網頁設定頁要輸入同一個
 const REC = 'Records', FIX = 'Fixed';
-const REC_HEAD = ['ID', 'Date', 'Section', 'Item', 'Amount', 'Remark', 'CreatedAt', 'FixedID'];
+// Amount 一律為港幣；外幣支出另記 Currency / FxRate（1 外幣 = ? HKD）/ OrigAmount（原幣金額）
+const REC_HEAD = ['ID', 'Date', 'Section', 'Item', 'Amount', 'Remark', 'CreatedAt', 'FixedID', 'Currency', 'FxRate', 'OrigAmount'];
 const FIX_HEAD = ['ID', 'Item', 'Amount', 'Remark', 'StartYm', 'Active', 'UpdatedAt', 'History'];
 
 function tz_() { return SpreadsheetApp.getActive().getSpreadsheetTimeZone(); }
 function fmt_(d, p) { return Utilities.formatDate(d, tz_(), p); }
 function ymd_(v) { return v instanceof Date ? fmt_(v, 'yyyy-MM-dd') : String(v).slice(0, 10); }
 function ym_(v) { return v instanceof Date ? fmt_(v, 'yyyy-MM') : String(v).slice(0, 7); }
+/** 舊表自動補上新增的欄位標題（Currency / FxRate / OrigAmount） */
+function ensureRecHead_() {
+  const sh = sheet_(REC);
+  if (sh.getLastColumn() < REC_HEAD.length) sh.getRange(1, 1, 1, REC_HEAD.length).setValues([REC_HEAD]);
+}
 function sheet_(n) { return SpreadsheetApp.getActive().getSheetByName(n); }
 function rows_(n) { return sheet_(n).getDataRange().getValues().slice(1); }
 function isOn_(v) { return v === true || String(v).toUpperCase() === 'TRUE'; }
@@ -19,6 +25,7 @@ function setup() {
     const sh = ss.getSheetByName(n) || ss.insertSheet(n);
     if (sh.getLastRow() === 0) { sh.appendRow(h); sh.setFrozenRows(1); }
   });
+  ensureRecHead_();
   sheet_(REC).getRange('B:B').setNumberFormat('yyyy-mm-dd');
   sheet_(FIX).getRange('E:E').setNumberFormat('@'); // 防止 2026-11 被轉成日期
   ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
@@ -31,7 +38,8 @@ function monthlyJob() {
   const done = new Set(rows_(REC).filter(r => r[7] && ym_(r[1]) === ym).map(r => r[7]));
   const add = rows_(FIX)
     .filter(r => r[0] && isOn_(r[5]) && ym_(r[4]) < ym && !done.has(r[0]))
-    .map(r => [Utilities.getUuid(), ym + '-01', '固定', r[1], Number(r[2]), r[3], new Date(), r[0]]);
+    .map(r => [Utilities.getUuid(), ym + '-01', '固定', r[1], Number(r[2]), r[3], new Date(), r[0], 'HKD', 1, Number(r[2])]);
+  if (add.length) ensureRecHead_();
   if (add.length) rec.getRange(rec.getLastRow() + 1, 1, add.length, add[0].length).setValues(add);
 }
 
@@ -61,8 +69,13 @@ function write_(b) {
   switch (b.action) {
     case 'add': {
       if (findRow_(rec, b.id)) return { dup: true }; // 重送不會重複
+      ensureRecHead_();
       const fixedId = b.section === '固定' ? Utilities.getUuid() : '';
-      rec.appendRow([b.id, b.date, b.section, b.item, Number(b.amount), b.remark || '', new Date(), fixedId]);
+      const cur = fixedId ? 'HKD' : String(b.currency || 'HKD').toUpperCase();
+      const rate = cur === 'HKD' ? 1 : Number(b.fxRate);
+      if (!(rate > 0)) throw new Error('匯率無效');
+      const orig = b.origAmount != null && cur !== 'HKD' ? Number(b.origAmount) : Number(b.amount);
+      rec.appendRow([b.id, b.date, b.section, b.item, Number(b.amount), b.remark || '', new Date(), fixedId, cur, rate, orig]);
       if (fixedId) fix.appendRow([fixedId, b.item, Number(b.amount), b.remark || '', b.date.slice(0, 7), true, new Date(), '']);
       return {};
     }
@@ -82,7 +95,10 @@ function write_(b) {
       if (b.applyThisMonth) {
         const v = rec.getDataRange().getValues();
         for (let i = 1; i < v.length; i++) {
-          if (v[i][7] === b.id && ym_(v[i][1]) === thisYm) rec.getRange(i + 1, 5, 1, 2).setValues([[amt, b.remark || '']]);
+          if (v[i][7] === b.id && ym_(v[i][1]) === thisYm) {
+            rec.getRange(i + 1, 5, 1, 2).setValues([[amt, b.remark || '']]);
+            if (v[0].length >= 11) rec.getRange(i + 1, 11).setValue(amt);
+          }
         }
       }
       return {};
@@ -115,7 +131,9 @@ function findRow_(sh, id) {
 function recObj_(r) {
   return {
     id: r[0], date: ymd_(r[1]), section: r[2], item: r[3], amount: Number(r[4]), remark: String(r[5] || ''),
-    createdAt: r[6] instanceof Date ? r[6].toISOString() : String(r[6] || ''), fixedId: r[7] || ''
+    createdAt: r[6] instanceof Date ? r[6].toISOString() : String(r[6] || ''), fixedId: r[7] || '',
+    currency: String(r[8] || 'HKD'), fxRate: Number(r[9]) || 1,
+    origAmount: r[10] === '' || r[10] == null ? Number(r[4]) : Number(r[10])
   };
 }
 

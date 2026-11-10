@@ -34,9 +34,13 @@
 | + | Expense 頁可「修改／停用／重新啟用」固定項目（因費用常加價）；可選同時更新本月已入帳金額；History 欄記錄加價（例如 `2026-12: 68→78`） | ✅ |
 | + | 離線暫存佇列（localStorage `expenseQueue`），恢復網絡自動補送；伺服器以 ID 防重複 | ✅ |
 | + | 刪除單筆紀錄 | ✅ |
+| + | 幣種＋匯率：預設 HKD；常用 JPY／CNY／HKD／USD，其他幣種於下方 optgroup；匯率自動取 open.er-api.com（每日快取 `fxRates`），可手動修改並記住（`fxManual`）；旅遊記住上次幣種（`lastTravelCur`）；固定項目只限 HKD | ✅ |
+| + | 「其他」新增「補充品」🌿 | ✅ |
+| + | 標題列置頂（sticky）；Monthly Analysis 手機版圓餅圖不再超出寬度 | ✅ |
 
 ## Google Sheet 結構
-- `Records`: ID | Date | Section | Item | Amount | Remark | CreatedAt | FixedID
+- `Records`: ID | Date | Section | Item | Amount | Remark | CreatedAt | FixedID | Currency | FxRate | OrigAmount
+  - Amount 一律為 HKD（分析用）；外幣支出：OrigAmount 為原幣金額，FxRate 為「1 外幣 = ? HKD」；舊表由 `ensureRecHead_()` 自動補欄位標題
 - `Fixed`: ID | Item | Amount | Remark | StartYm（純文字 yyyy-MM） | Active | UpdatedAt | History
 
 ## API（Code.gs）
@@ -60,7 +64,6 @@
 - GAS 每次讀寫約 1–3 秒延遲
 
 ## 待決定／可能的下一步
-- 旅遊外幣支出：是否加入「幣種 + 匯率」欄位（目前只記 HK$）
 - 年繳項目（如保險年費）：是否在「固定」加入「週期：月／年」
 - TOKEN 外洩時的作廢流程（換 TOKEN + 重新部署）
 - PWA：加入 manifest.json，可「加入主畫面」全螢幕使用

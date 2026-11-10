@@ -58,7 +58,8 @@ button{cursor:pointer}
 .spacer{flex:1}
 .scrim{display:none;position:fixed;inset:0;background:rgba(16,22,26,.45);z-index:35}
 main{flex:1;min-width:0;display:flex;flex-direction:column;padding-bottom:env(safe-area-inset-bottom,0px)}
-.topbar{display:flex;align-items:center;gap:8px;padding:calc(14px + env(safe-area-inset-top,0px)) 20px 6px;max-width:760px;width:100%}
+.topbar{display:flex;align-items:center;gap:8px;padding:calc(14px + env(safe-area-inset-top,0px)) 20px 6px;max-width:760px;width:100%;
+  position:sticky;top:0;z-index:30;background:var(--bg)}
 .topbar h1{font-size:21px;margin:0;flex:1}
 #syncState{font-size:12px;color:var(--muted)}
 .page{padding:8px 20px 48px;max-width:760px;width:100%}
@@ -88,7 +89,11 @@ h2{font-size:16px;margin:28px 0 10px}
 .date-btn .today{margin-left:auto;font-size:12px;color:var(--muted)}
 .amount-row{display:flex;align-items:baseline;gap:8px;border-bottom:1.5px solid var(--line);padding:2px 2px 8px}
 .amount-row:focus-within{border-color:var(--primary)}
-.amount-row span{color:var(--muted);font-size:18px;font-weight:500}
+.cur-sel{border:0;background:var(--surface-2);color:var(--ink);font-size:16px;font-weight:500;border-radius:10px;padding:6px 8px;max-width:9.5em;flex-shrink:0}
+.cur-sel:disabled{opacity:.7;appearance:none;-webkit-appearance:none;background:none;padding-left:0}
+.fx-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:14px;color:var(--muted)}
+.fx-row input{width:7.5em;padding:6px 10px;font-variant-numeric:tabular-nums}
+.fx-row b{color:var(--ink);margin-left:auto}
 #amount{border:0;background:none;font-size:42px;font-weight:700;width:100%;min-width:0;outline:none;font-variant-numeric:tabular-nums;padding:0}
 .text-in{width:100%;border:1px solid var(--line);background:var(--surface-2);border-radius:12px;padding:12px 14px;outline:none}
 .text-in:focus{border-color:var(--primary)}
@@ -107,7 +112,9 @@ h2{font-size:16px;margin:28px 0 10px}
 .rec .main div:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rec .sub{font-size:12px;color:var(--muted)}
 .rec .amt{font-weight:700;white-space:nowrap}
+.rec .amt{text-align:right}
 .rec .amt small{font-weight:400;color:var(--muted)}
+.rec .amt small.hk{display:block;font-size:12px}
 .rec.off{opacity:.5}
 .day-head{font-size:12px;color:var(--muted);padding:12px 0 2px;font-weight:500}
 .month-nav{display:flex;align-items:center;justify-content:space-between;margin:0 0 12px}
@@ -127,8 +134,9 @@ h2{font-size:16px;margin:28px 0 10px}
 .stats .total{margin:0}
 .delta{font-size:14px;font-weight:500}
 .an-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:16px;margin-top:16px}
-@media (max-width:640px){ .an-grid{grid-template-columns:1fr} }
-.pie{max-width:230px;margin:4px auto 12px;display:block}
+@media (max-width:640px){ .an-grid{grid-template-columns:minmax(0,1fr)} }
+.an-grid>.card{min-width:0}
+.pie{width:100%;max-width:230px;height:auto;margin:4px auto 12px;display:block}
 .legend{display:flex;flex-direction:column;gap:6px;font-size:13px}
 .legend div{display:grid;grid-template-columns:12px 1fr auto 44px;gap:8px;align-items:center}
 .legend i{width:12px;height:12px;border-radius:3px}
@@ -200,7 +208,10 @@ a{color:inherit}
       <div class="grid" id="itemGrid"></div>
       <div class="card form">
         <button class="date-btn" id="dateBtn"><span>📅</span><span id="dateText"></span><span class="today" id="todayTag"></span></button>
-        <label class="amount-row"><span>HK$</span><input id="amount" type="text" inputmode="decimal" placeholder="0" autocomplete="off" aria-label="金額"></label>
+        <div class="amount-row"><select class="cur-sel" id="cur" aria-label="幣種"></select><input id="amount" type="text" inputmode="decimal" placeholder="0" autocomplete="off" aria-label="金額"></div>
+        <div class="fx-row" id="fxRow" hidden>匯率：1 <span id="fxCode"></span> =
+          <input class="text-in" id="fxRate" type="text" inputmode="decimal" aria-label="匯率"> HKD
+          <b id="fxHkd"></b><span class="small" id="fxSrc" style="flex-basis:100%"></span></div>
         <input class="text-in" id="remark" type="text" placeholder="備註（選填），例如店名或用途" autocomplete="off">
         <p class="hint" id="fixedHint" hidden>固定項目由下個月 1 號起自動入帳；加價或取消可到 Expense 頁修改。</p>
         <button class="primary" id="saveBtn">儲存支出</button>
@@ -294,9 +305,15 @@ const SECTIONS = {
   '旅遊': [['機票','✈️'],['酒店','🏨'],['門票','🎟️'],['交通','🚄'],['餐飲','🍣'],['購物','🛍️'],['保險','🛡️'],['其他','🧳']],
   '日常': [['早餐','🍳'],['午餐','🍱'],['晚餐','🍜'],['飲品','🧋'],['交通','🚇'],['零食','🍪'],['日用品','🧴'],['雜項','📦']],
   '固定': [['月供','🏠'],['保險','🛡️'],['訂閱','📺'],['月票','🎫'],['電話費','📱'],['上網','🌐'],['水電煤','💡'],['管理費','🏢']],
-  '其他': [['衣服','👕'],['電器','🔌'],['娛樂','🎮'],['醫療','💊'],['禮物','🎁'],['運動','🏋️'],['教育','📚'],['其他','✨']]
+  '其他': [['衣服','👕'],['電器','🔌'],['娛樂','🎮'],['醫療','💊'],['禮物','🎁'],['運動','🏋️'],['教育','📚'],['補充品','🌿'],['其他','✨']]
 };
 const ORDER = ['旅遊','日常','固定','其他'];
+// [代碼, 符號, 名稱, 後備匯率(1 外幣 = ? HKD，連線失敗時使用)]
+const CUR_MAIN = [['JPY','¥','日圓',0.051],['CNY','CN¥','人民幣',1.09],['HKD','HK$','港幣',1],['USD','US$','美元',7.78]];
+const CUR_MORE = [['TWD','NT$','新台幣',0.24],['KRW','₩','韓圜',0.0055],['THB','฿','泰銖',0.23],['SGD','S$','新加坡元',6.0],
+  ['MYR','RM','馬幣',1.75],['MOP','MOP$','澳門幣',0.97],['EUR','€','歐元',8.5],['GBP','£','英鎊',10.2],['AUD','A$','澳元',5.1],
+  ['CAD','C$','加元',5.6],['NZD','NZ$','紐西蘭元',4.6],['CHF','CHF','瑞士法郎',9.3],['VND','₫','越南盾',0.0003],['PHP','₱','菲律賓披索',0.135],['IDR','Rp','印尼盾',0.00048]];
+const CUR = Object.fromEntries([...CUR_MAIN, ...CUR_MORE].map(c => [c[0], c]));
 const COLORS = ['#37474F','#5C7A99','#90A4AE','#7E8F6E','#B0BEC5','#3E5872','#A3887A','#6B8794'];
 const TITLES = {input:'新增支出', expense:'支出概覽', analysis:'每月分析', settings:'設定'};
 const IH = 40;
@@ -312,6 +329,10 @@ const daysIn = (y,m) => new Date(y,m,0).getDate();
 const range = (a,b) => Array.from({length:b-a+1},(_,i)=>a+i);
 const sum = rows => rows.reduce((a,r)=>a+Number(r.amount||0),0);
 const money = n => 'HK$ ' + Number(n).toLocaleString('en-HK',{maximumFractionDigits:2});
+const curMoney = (n,c) => (CUR[c]?.[1] || c) + ' ' + Number(n).toLocaleString('en-HK',{maximumFractionDigits:2});
+const amtHtml = r => r.currency && r.currency !== 'HKD'
+  ? `${curMoney(r.origAmount, r.currency)}<small class="hk">≈ ${money(r.amount)}</small>` : money(r.amount);
+const round2 = n => Math.round(n*100)/100;
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const iconOf = (s,i) => (SECTIONS[s]||[]).find(x=>x[0]===i)?.[1] || '•';
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)+Math.random().toString(36).slice(2));
@@ -319,7 +340,7 @@ const dateLabel = s => { const [y,m,d] = s.split('-').map(Number); const w = '�
 
 let cfg = JSON.parse(localStorage.getItem('expenseCfg') || '{}');
 const S = { page:'input', section:'日常', item:null, date:todayStr(), expYm:todayStr().slice(0,7),
-  anYm:shiftYm(todayStr().slice(0,7),-1), anMode:'section', cache:{}, fixed:null, editing:null };
+  anYm:shiftYm(todayStr().slice(0,7),-1), anMode:'section', cache:{}, fixed:null, editing:null, cur:'HKD' };
 
 /* ---------- utils ---------- */
 let toastT;
@@ -397,11 +418,55 @@ function renderTabs(){
   $('#itemGrid').innerHTML = SECTIONS[S.section].map(([n,e]) =>
     `<button class="chip${S.item===n?' active':''}" data-item="${n}"><span class="em">${e}</span>${n}</button>`).join('');
   $('#fixedHint').hidden = S.section !== '固定';
+  $('#cur').disabled = S.section === '固定';
 }
+
+/* ---------- 幣種／匯率 ---------- */
+const opt = c => `<option value="${c[0]}">${c[1]} ${c[2]} ${c[0]}</option>`;
+$('#cur').innerHTML = `<optgroup label="常用">${CUR_MAIN.map(opt).join('')}</optgroup><optgroup label="其他">${CUR_MORE.map(opt).join('')}</optgroup>`;
+const lsGet = (k,d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch(e){ return d; } };
+const lsSet = (k,v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} };
+let fxLive = null; // {date, rates:{JPY:0.05,...}}  1 外幣 = ? HKD
+async function loadRates(){
+  const c = lsGet('fxRates', null);
+  if (c && c.date === todayStr()) return (fxLive = c);
+  try {
+    const j = await (await fetch('https://open.er-api.com/v6/latest/HKD')).json();
+    if (j.result !== 'success') throw 0;
+    const rates = {}; Object.entries(j.rates).forEach(([k,v]) => { if (v > 0) rates[k] = 1/v; });
+    fxLive = { date: todayStr(), rates }; lsSet('fxRates', fxLive);
+  } catch(e){ fxLive = c; }
+  return fxLive;
+}
+const fmtRate = r => String(Number(r.toPrecision(4)));
+function setCur(code){
+  S.cur = CUR[code] ? code : 'HKD'; $('#cur').value = S.cur;
+  const foreign = S.cur !== 'HKD'; $('#fxRow').hidden = !foreign;
+  if (!foreign) return;
+  $('#fxCode').textContent = S.cur;
+  const manual = lsGet('fxManual', {})[S.cur], live = fxLive?.rates?.[S.cur];
+  const r = manual || live || CUR[S.cur][3];
+  $('#fxRate').value = fmtRate(r);
+  $('#fxSrc').textContent = manual ? '使用你上次手動輸入的匯率（點此改用參考匯率）' : live ? `參考匯率（${fxLive.date}，open.er-api.com）` : '離線後備匯率，請按實際交易匯率修改';
+  updHkd();
+  if (!fxLive || fxLive.date !== todayStr()) loadRates().then(() => { if (S.cur === code && !manual) setCur(code); });
+}
+function updHkd(){
+  const a = parseFloat($('#amount').value), r = parseFloat($('#fxRate').value);
+  $('#fxHkd').textContent = a > 0 && r > 0 ? '≈ ' + money(round2(a*r)) : '';
+}
+$('#cur').addEventListener('change', e => { setCur(e.target.value); if (S.section === '旅遊') lsSet('lastTravelCur', S.cur); });
+$('#fxRate').addEventListener('input', e => {
+  e.target.value = e.target.value.replace(/[^\d.]/g,'').replace(/(\..*)\./g,'$1');
+  const r = parseFloat(e.target.value), m = lsGet('fxManual', {});
+  if (r > 0){ m[S.cur] = r; lsSet('fxManual', m); $('#fxSrc').textContent = '已記住此匯率'; }
+  updHkd();
+});
+$('#fxSrc').addEventListener('click', () => { const m = lsGet('fxManual', {}); delete m[S.cur]; lsSet('fxManual', m); setCur(S.cur); });
 function renderDate(){ $('#dateText').textContent = dateLabel(S.date); $('#todayTag').textContent = S.date === todayStr() ? '今天' : ''; }
-$$('.tab').forEach(b => b.addEventListener('click', () => { S.section = b.dataset.s; S.item = null; renderTabs(); }));
+$$('.tab').forEach(b => b.addEventListener('click', () => { S.section = b.dataset.s; S.item = null; renderTabs(); setCur(S.section === '旅遊' ? lsGet('lastTravelCur', 'HKD') : 'HKD'); }));
 $('#itemGrid').addEventListener('click', e => { const c = e.target.closest('.chip'); if (!c) return; S.item = c.dataset.item; renderTabs(); $('#amount').focus(); });
-$('#amount').addEventListener('input', e => { e.target.value = e.target.value.replace(/[^\d.]/g,'').replace(/(\..*)\./g,'$1'); });
+$('#amount').addEventListener('input', e => { e.target.value = e.target.value.replace(/[^\d.]/g,'').replace(/(\..*)\./g,'$1'); updHkd(); });
 $('#amount').addEventListener('keydown', e => { if (e.key === 'Enter') $('#remark').focus(); });
 $('#remark').addEventListener('keydown', e => { if (e.key === 'Enter') save(); });
 $('#saveBtn').addEventListener('click', save);
@@ -411,7 +476,12 @@ async function save(){
   if (!S.item) return toast('請先選擇項目');
   if (!(amt > 0)) return toast('請輸入金額');
   if (!cfg.url){ toast('請先連結 Google Sheet'); return go('settings'); }
-  const rec = { id:uid(), date:S.date, section:S.section, item:S.item, amount:Math.round(amt*100)/100, remark:$('#remark').value.trim() };
+  const cur = S.section === '固定' ? 'HKD' : S.cur;
+  const rate = cur === 'HKD' ? 1 : parseFloat($('#fxRate').value);
+  if (!(rate > 0)) return toast('請輸入有效匯率');
+  const orig = round2(amt);
+  const rec = { id:uid(), date:S.date, section:S.section, item:S.item, amount:round2(orig*rate), remark:$('#remark').value.trim(),
+    currency:cur, fxRate:rate, origAmount:orig };
   const btn = $('#saveBtn'); btn.disabled = true;
   try {
     await post({action:'add', ...rec});
@@ -421,7 +491,7 @@ async function save(){
     setQ([...getQ(), rec]); toast('未能連線，已暫存並會自動重試');
   }
   delete S.cache[rec.date.slice(0,7)]; if (rec.section === '固定') S.fixed = null;
-  $('#amount').value = ''; $('#remark').value = ''; S.item = null; renderTabs(); btn.disabled = false;
+  $('#amount').value = ''; $('#remark').value = ''; S.item = null; renderTabs(); updHkd(); btn.disabled = false;
   renderRecent();
 }
 
@@ -439,7 +509,7 @@ function recRow(r, withDel){
   const sub = `${r.date.slice(5).replace('-','/')}，${r.section}${r.remark ? '，'+esc(r.remark) : ''}${r.pending ? '，待同步' : ''}`;
   return `<div class="rec"><span class="em">${iconOf(r.section,r.item)}</span>
     <div class="main"><div>${esc(r.item)}</div><div class="sub">${sub}</div></div>
-    <span class="amt">${money(r.amount)}</span>
+    <span class="amt">${amtHtml(r)}</span>
     ${withDel ? `<button class="ghost danger" data-del="${esc(r.id)}">刪除</button>` : ''}</div>`;
 }
 
@@ -521,7 +591,7 @@ $('#expBody').addEventListener('click', async e => {
   const del = e.target.closest('[data-del]'), fx = e.target.closest('[data-fx]');
   if (del){
     const r = (S.cache[S.expYm] || []).find(x => x.id === del.dataset.del); if (!r) return;
-    if (!confirm(`刪除 ${r.date} 的「${r.item} ${money(r.amount)}」？`)) return;
+    if (!confirm(`刪除 ${r.date} 的「${r.item} ${r.currency && r.currency !== 'HKD' ? curMoney(r.origAmount, r.currency) : money(r.amount)}」？`)) return;
     try { await post({action:'deleteRecord', id:r.id}); delete S.cache[S.expYm]; toast('已刪除'); renderExpense(); }
     catch(err){ toast(errMsg(err)); }
   }
@@ -606,7 +676,7 @@ async function renderAnalysis(){
           <h2 style="margin:10px 0 2px">最大 3 筆支出</h2>
           ${top.map((r,i) => `<div class="rec"><span class="rank">${i+1}</span><span class="em">${iconOf(r.section,r.item)}</span>
             <div class="main"><div>${esc(r.item)}${r.remark ? '，'+esc(r.remark) : ''}</div><div class="sub">${r.date}，${r.section}，佔 ${(r.amount/total*100).toFixed(1)}%</div></div>
-            <span class="amt">${money(r.amount)}</span></div>`).join('')}
+            <span class="amt">${amtHtml(r)}</span></div>`).join('')}
         </div>
       </div>`;
   } catch(e){ box.innerHTML = `<p class="muted">${esc(errMsg(e))}</p>`; }
@@ -639,7 +709,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape'){ closePicker
 $$('.overlay').forEach(o => o.addEventListener('click', e => { if (e.target === o) o.classList.remove('show'); }));
 window.addEventListener('online', flushQ);
 
-renderTabs(); renderDate(); updateSync();
+renderTabs(); renderDate(); updateSync(); setCur('HKD');
 if (!cfg.url) go('settings'); else { go('input'); flushQ(); }
 </script>
 </body>
