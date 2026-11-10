@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#37474F">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>記帳簿</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#ECEFF1;--surface:#FFFFFF;--surface-2:#F4F6F7;--ink:#263238;--muted:#607D8B;--line:#DCE3E6;
+  --primary:#455A64;--primary-ink:#FFFFFF;--soft:#CFD8DC;--side:#37474F;--side-ink:#ECEFF1;--danger:#B4544B;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#151C20;--surface:#1E272C;--surface-2:#263238;--ink:#ECEFF1;--muted:#90A4AE;--line:#31414A;
+    --primary:#90A4AE;--primary-ink:#151C20;--soft:#2C3A41;--side:#10161A;--side-ink:#CFD8DC;--danger:#E08A80;
+    color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{
+  font-family:"Noto Sans TC",system-ui,-apple-system,"PingFang TC","Microsoft JhengHei",sans-serif;
+  background:var(--bg);color:var(--ink);font-size:15px;line-height:1.5;-webkit-tap-highlight-color:transparent;
+}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+.num,.amt,.total{font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)} .small{font-size:13px}
+[hidden]{display:none!important}
+
+/* layout */
+.app{display:flex;min-height:100dvh}
+.sidebar{
+  width:224px;flex-shrink:0;background:var(--side);color:var(--side-ink);
+  position:sticky;top:0;height:100dvh;display:flex;flex-direction:column;gap:4px;
+  padding:calc(14px + env(safe-area-inset-top,0px)) 12px calc(14px + env(safe-area-inset-bottom,0px));
+  transition:width .2s ease;overflow:hidden;z-index:40;
+}
+.sidebar.collapsed{width:72px}
+.sidebar.collapsed .label{display:none}
+.brand{display:flex;align-items:center;gap:10px;padding:4px 4px 16px}
+.brand-name{font-weight:700;font-size:17px;white-space:nowrap}
+.icon-btn{border:0;background:none;width:40px;height:40px;border-radius:10px;font-size:20px;display:grid;place-items:center;flex-shrink:0}
+.sidebar .icon-btn{color:var(--side-ink)}
+.sidebar .icon-btn:hover,.nav-item:hover{background:rgba(255,255,255,.07)}
+.nav-item{display:flex;align-items:center;gap:12px;width:100%;padding:11px 12px;border:0;background:none;color:inherit;border-radius:12px;text-align:left;white-space:nowrap}
+.nav-item.active{background:rgba(255,255,255,.14);font-weight:500}
+.nav-item .ni{width:24px;text-align:center;font-size:18px;flex-shrink:0}
+.nav-item .ext{margin-left:auto;font-size:12px;opacity:.6}
+.spacer{flex:1}
+.scrim{display:none;position:fixed;inset:0;background:rgba(16,22,26,.45);z-index:35}
+main{flex:1;min-width:0;display:flex;flex-direction:column;padding-bottom:env(safe-area-inset-bottom,0px)}
+.topbar{display:flex;align-items:center;gap:8px;padding:calc(14px + env(safe-area-inset-top,0px)) 20px 6px;max-width:760px;width:100%}
+.topbar h1{font-size:21px;margin:0;flex:1}
+#syncState{font-size:12px;color:var(--muted)}
+.page{padding:8px 20px 48px;max-width:760px;width:100%}
+h2{font-size:16px;margin:28px 0 10px}
+.card{background:var(--surface);border-radius:18px;padding:16px}
+
+@media (max-width:899px){
+  .sidebar{position:fixed;left:0;top:0;bottom:0;height:auto;width:248px;transform:translateX(-100%);transition:transform .22s ease}
+  .sidebar.open{transform:none}
+  .sidebar.collapsed{width:248px}
+  .sidebar.collapsed .label{display:inline}
+  .scrim.show{display:block}
+  .topbar{padding-left:12px}
+}
+@media (min-width:900px){ .mobile-only{display:none} }
+
+/* input page */
+.tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;background:var(--soft);padding:4px;border-radius:14px}
+.tab{border:0;background:none;padding:9px 0;border-radius:10px;font-weight:500;color:var(--muted)}
+.tab.active{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(38,50,56,.18)}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:14px 0}
+.chip{display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 4px;border:1.5px solid transparent;background:var(--surface);border-radius:14px;font-size:13px}
+.chip .em{font-size:24px;line-height:1.2}
+.chip.active{border-color:var(--primary);background:var(--surface-2);font-weight:700}
+.form{display:flex;flex-direction:column;gap:12px}
+.date-btn{display:flex;align-items:center;gap:10px;width:100%;border:0;background:var(--surface-2);padding:12px 14px;border-radius:12px;text-align:left}
+.date-btn .today{margin-left:auto;font-size:12px;color:var(--muted)}
+.amount-row{display:flex;align-items:baseline;gap:8px;border-bottom:1.5px solid var(--line);padding:2px 2px 8px}
+.amount-row:focus-within{border-color:var(--primary)}
+.amount-row span{color:var(--muted);font-size:18px;font-weight:500}
+#amount{border:0;background:none;font-size:42px;font-weight:700;width:100%;min-width:0;outline:none;font-variant-numeric:tabular-nums;padding:0}
+.text-in{width:100%;border:1px solid var(--line);background:var(--surface-2);border-radius:12px;padding:12px 14px;outline:none}
+.text-in:focus{border-color:var(--primary)}
+.hint{font-size:13px;color:var(--muted);margin:0}
+.primary{width:100%;padding:14px;border:0;border-radius:14px;background:var(--primary);color:var(--primary-ink);font-weight:700;font-size:16px}
+.primary:disabled{opacity:.5}
+.ghost{border:1px solid var(--line);background:none;border-radius:10px;padding:6px 12px;font-size:13px;color:var(--muted);flex-shrink:0}
+.ghost.danger{color:var(--danger)}
+
+/* lists */
+.list{padding:4px 16px}
+.rec{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--line)}
+.rec:last-child{border-bottom:0}
+.rec .em{width:38px;height:38px;border-radius:11px;background:var(--surface-2);display:grid;place-items:center;font-size:19px;flex-shrink:0}
+.rec .main{flex:1;min-width:0}
+.rec .main div:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rec .sub{font-size:12px;color:var(--muted)}
+.rec .amt{font-weight:700;white-space:nowrap}
+.rec .amt small{font-weight:400;color:var(--muted)}
+.rec.off{opacity:.5}
+.day-head{font-size:12px;color:var(--muted);padding:12px 0 2px;font-weight:500}
+.month-nav{display:flex;align-items:center;justify-content:space-between;margin:0 0 12px}
+.month-nav strong{font-size:17px}
+.month-nav .ghost{font-size:16px;padding:4px 14px}
+.total{font-size:34px;font-weight:700;line-height:1.2;margin:2px 0 14px}
+.bar-row{display:grid;grid-template-columns:44px 1fr 108px;align-items:center;gap:10px;padding:5px 0;font-size:14px}
+.bar{height:8px;background:var(--soft);border-radius:4px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--primary);border-radius:4px}
+.bar-row .num{text-align:right}
+
+/* analysis */
+.seg{display:inline-flex;background:var(--soft);padding:3px;border-radius:10px;gap:2px}
+.seg button{border:0;background:none;padding:5px 14px;border-radius:8px;font-size:13px;color:var(--muted)}
+.seg button.active{background:var(--surface);color:var(--ink);font-weight:500}
+.stats{display:flex;gap:28px;flex-wrap:wrap}
+.stats .total{margin:0}
+.delta{font-size:14px;font-weight:500}
+.an-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:16px;margin-top:16px}
+@media (max-width:640px){ .an-grid{grid-template-columns:1fr} }
+.pie{max-width:230px;margin:4px auto 12px;display:block}
+.legend{display:flex;flex-direction:column;gap:6px;font-size:13px}
+.legend div{display:grid;grid-template-columns:12px 1fr auto 44px;gap:8px;align-items:center}
+.legend i{width:12px;height:12px;border-radius:3px}
+.legend .pct{text-align:right;color:var(--muted)}
+.top3 .rank{font-size:22px;font-weight:700;color:var(--muted);width:20px;text-align:center;flex-shrink:0}
+
+/* overlays */
+.overlay{position:fixed;inset:0;background:rgba(16,22,26,.45);display:none;z-index:60;align-items:flex-end;justify-content:center}
+.overlay.show{display:flex}
+.sheet{background:var(--surface);width:100%;max-width:440px;border-radius:22px 22px 0 0;padding:14px 18px calc(18px + env(safe-area-inset-bottom,0px))}
+@media (min-width:900px){ .overlay{align-items:center} .sheet{border-radius:22px} }
+.sheet-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.sheet-head strong{font-size:16px}
+.link-btn{border:0;background:none;color:var(--muted);padding:8px 4px}
+.link-btn.strong{color:var(--ink);font-weight:700}
+.wheel{position:relative;display:grid;grid-template-columns:1.3fr 1fr 1fr;height:200px;margin:6px 0 10px}
+.wheel::before{content:"";position:absolute;left:0;right:0;top:80px;height:40px;background:var(--surface-2);border-radius:10px;pointer-events:none}
+.wcol{position:relative;z-index:1;overflow-y:scroll;scroll-snap-type:y mandatory;scrollbar-width:none;overscroll-behavior:contain;
+  -webkit-mask-image:linear-gradient(transparent,#000 38%,#000 62%,transparent);mask-image:linear-gradient(transparent,#000 38%,#000 62%,transparent)}
+.wcol::-webkit-scrollbar{display:none}
+.wi,.wsp{height:40px}
+.wi{line-height:40px;text-align:center;scroll-snap-align:center;font-size:19px;color:var(--muted);font-variant-numeric:tabular-nums;user-select:none}
+.wi.sel{color:var(--ink);font-weight:700}
+.field{display:flex;flex-direction:column;gap:6px;margin-bottom:12px;font-size:13px;color:var(--muted)}
+.check{display:flex;gap:8px;align-items:center;font-size:14px;margin:4px 0 16px}
+.row-btns{display:flex;gap:10px}
+.row-btns .primary{flex:1}
+.row-btns .ghost{padding:12px 14px;font-size:14px}
+.toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translate(-50%,20px);background:var(--side);color:var(--side-ink);
+  padding:10px 18px;border-radius:12px;font-size:14px;opacity:0;pointer-events:none;transition:.2s;z-index:80;max-width:90vw;text-align:center}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.steps{padding-left:20px;margin:8px 0 0;color:var(--muted);font-size:14px}
+.steps li{margin:4px 0}
+a{color:inherit}
+@media (prefers-reduced-motion: reduce){ *{transition:none!important;scroll-behavior:auto!important} }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <button class="icon-btn" id="collapseBtn" aria-label="收起或展開側欄">☰</button>
+      <span class="brand-name label">記帳簿</span>
+    </div>
+    <button class="nav-item" data-page="input"><span class="ni">✏️</span><span class="label">Input</span></button>
+    <button class="nav-item" data-page="expense"><span class="ni">📋</span><span class="label">Expense</span></button>
+    <button class="nav-item" data-page="details"><span class="ni">📑</span><span class="label">Details</span><span class="ext label">↗</span></button>
+    <button class="nav-item" data-page="analysis"><span class="ni">📈</span><span class="label">Monthly Analysis</span></button>
+    <div class="spacer"></div>
+    <button class="nav-item" data-page="settings"><span class="ni">⚙️</span><span class="label">設定</span></button>
+  </aside>
+  <div class="scrim" id="scrim"></div>
+
+  <main>
+    <header class="topbar">
+      <button class="icon-btn mobile-only" id="menuBtn" aria-label="開啟選單">☰</button>
+      <h1 id="pageTitle">新增支出</h1>
+      <span id="syncState"></span>
+    </header>
+
+    <!-- Input -->
+    <section class="page" id="p-input">
+      <div class="tabs" role="tablist">
+        <button class="tab" data-s="旅遊">旅遊</button>
+        <button class="tab" data-s="日常">日常</button>
+        <button class="tab" data-s="固定">固定</button>
+        <button class="tab" data-s="其他">其他</button>
+      </div>
+      <div class="grid" id="itemGrid"></div>
+      <div class="card form">
+        <button class="date-btn" id="dateBtn"><span>📅</span><span id="dateText"></span><span class="today" id="todayTag"></span></button>
+        <label class="amount-row"><span>HK$</span><input id="amount" type="text" inputmode="decimal" placeholder="0" autocomplete="off" aria-label="金額"></label>
+        <input class="text-in" id="remark" type="text" placeholder="備註（選填），例如店名或用途" autocomplete="off">
+        <p class="hint" id="fixedHint" hidden>固定項目由下個月 1 號起自動入帳；加價或取消可到 Expense 頁修改。</p>
+        <button class="primary" id="saveBtn">儲存支出</button>
+      </div>
+      <h2>本月最近紀錄</h2>
+      <div class="card list" id="recentList"><p class="muted small">載入中…</p></div>
+    </section>
+
+    <!-- Expense -->
+    <section class="page" id="p-expense" hidden>
+      <div class="month-nav">
+        <button class="ghost" data-exp="-1" aria-label="上個月">‹</button>
+        <strong id="expMonth"></strong>
+        <button class="ghost" data-exp="1" aria-label="下個月">›</button>
+      </div>
+      <div id="expBody"></div>
+    </section>
+
+    <!-- Analysis -->
+    <section class="page" id="p-analysis" hidden>
+      <div class="month-nav">
+        <button class="ghost" data-an="-1" aria-label="上個月">‹</button>
+        <strong id="anMonth"></strong>
+        <button class="ghost" data-an="1" aria-label="下個月">›</button>
+      </div>
+      <div id="anBody"></div>
+    </section>
+
+    <!-- Settings -->
+    <section class="page" id="p-settings" hidden>
+      <div class="card">
+        <label class="field">Apps Script Web App 連結
+          <input class="text-in" id="cfgUrl" type="url" placeholder="https://script.google.com/macros/s/…/exec">
+        </label>
+        <label class="field">密碼（與 Code.gs 內 TOKEN 相同）
+          <input class="text-in" id="cfgToken" type="password" autocomplete="off">
+        </label>
+        <button class="primary" id="cfgSave">連結並測試</button>
+        <p class="small muted" id="cfgStatus"></p>
+      </div>
+      <h2>首次設定步驟</h2>
+      <ol class="steps">
+        <li>建立一個新的 Google Sheet，打開「擴充功能 → Apps Script」，貼上 Code.gs 並修改 TOKEN。</li>
+        <li>在 Apps Script 選擇函式 <b>setup</b> 並執行一次，按指示授權。</li>
+        <li>「部署 → 新增部署作業 → 網頁應用程式」，執行身分選「我」，存取權選「所有人」。</li>
+        <li>把產生的 /exec 連結和密碼填入上方，按「連結並測試」。連結會保存在此瀏覽器，重新整理後無需再設定。</li>
+      </ol>
+    </section>
+  </main>
+</div>
+
+<!-- Date picker -->
+<div class="overlay" id="dateOverlay">
+  <div class="sheet" role="dialog" aria-label="選擇日期">
+    <div class="sheet-head">
+      <button class="link-btn" id="dpCancel">取消</button>
+      <strong>選擇日期</strong>
+      <button class="link-btn strong" id="dpOk">確定</button>
+    </div>
+    <div class="wheel">
+      <div class="wcol" id="wY"></div>
+      <div class="wcol" id="wM"></div>
+      <div class="wcol" id="wD"></div>
+    </div>
+    <button class="ghost" id="dpToday" style="width:100%;padding:10px">回到今天</button>
+  </div>
+</div>
+
+<!-- Fixed item editor -->
+<div class="overlay" id="fxOverlay">
+  <div class="sheet" role="dialog" aria-label="修改固定項目">
+    <div class="sheet-head">
+      <strong id="fxTitle">修改固定項目</strong>
+      <button class="link-btn" id="fxClose">關閉</button>
+    </div>
+    <label class="field">名稱／備註<input class="text-in" id="fxName" type="text"></label>
+    <label class="field">每月金額（HK$）<input class="text-in" id="fxAmount" type="text" inputmode="decimal"></label>
+    <label class="check"><input type="checkbox" id="fxApply"> 同時更新本月已入帳的金額</label>
+    <p class="hint small" id="fxHist"></p>
+    <div class="row-btns" style="margin-top:12px">
+      <button class="ghost danger" id="fxToggle">停用此項目</button>
+      <button class="primary" id="fxSave">儲存變更</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+const SECTIONS = {
+  '旅遊': [['機票','✈️'],['酒店','🏨'],['門票','🎟️'],['交通','🚄'],['餐飲','🍣'],['購物','🛍️'],['保險','🛡️'],['其他','🧳']],
+  '日常': [['早餐','🍳'],['午餐','🍱'],['晚餐','🍜'],['飲品','🧋'],['交通','🚇'],['零食','🍪'],['日用品','🧴'],['雜項','📦']],
+  '固定': [['月供','🏠'],['保險','🛡️'],['訂閱','📺'],['月票','🎫'],['電話費','📱'],['上網','🌐'],['水電煤','💡'],['管理費','🏢']],
+  '其他': [['衣服','👕'],['電器','🔌'],['娛樂','🎮'],['醫療','💊'],['禮物','🎁'],['運動','🏋️'],['教育','📚'],['其他','✨']]
+};
+const ORDER = ['旅遊','日常','固定','其他'];
+const COLORS = ['#37474F','#5C7A99','#90A4AE','#7E8F6E','#B0BEC5','#3E5872','#A3887A','#6B8794'];
+const TITLES = {input:'新增支出', expense:'支出概覽', analysis:'每月分析', settings:'設定'};
+const IH = 40;
+
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+const pad = n => String(n).padStart(2,'0');
+const ymd = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const todayStr = () => ymd(new Date());
+const shiftYm = (ym,k) => { let [y,m] = ym.split('-').map(Number); m += k; while(m<1){m+=12;y--} while(m>12){m-=12;y++} return `${y}-${pad(m)}`; };
+const ymLabel = ym => { const [y,m] = ym.split('-'); return `${y}年${Number(m)}月`; };
+const daysIn = (y,m) => new Date(y,m,0).getDate();
+const range = (a,b) => Array.from({length:b-a+1},(_,i)=>a+i);
+const sum = rows => rows.reduce((a,r)=>a+Number(r.amount||0),0);
+const money = n => 'HK$ ' + Number(n).toLocaleString('en-HK',{maximumFractionDigits:2});
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const iconOf = (s,i) => (SECTIONS[s]||[]).find(x=>x[0]===i)?.[1] || '•';
+const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)+Math.random().toString(36).slice(2));
+const dateLabel = s => { const [y,m,d] = s.split('-').map(Number); const w = '日一二三四五六'[new Date(y,m-1,d).getDay()]; return `${y}年${m}月${d}日（週${w}）`; };
+
+let cfg = JSON.parse(localStorage.getItem('expenseCfg') || '{}');
+const S = { page:'input', section:'日常', item:null, date:todayStr(), expYm:todayStr().slice(0,7),
+  anYm:shiftYm(todayStr().slice(0,7),-1), anMode:'section', cache:{}, fixed:null, editing:null };
+
+/* ---------- utils ---------- */
+let toastT;
+function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),2400); }
+function errMsg(e){
+  if (e.message === 'unauthorized') return '密碼不正確，請到設定頁檢查。';
+  if (e.message === 'noconfig') return '尚未連結 Google Sheet，請到設定頁完成連結。';
+  if (e instanceof TypeError) return '無法連線，請檢查網絡或 Web App 存取權是否設為「所有人」。';
+  return e.message;
+}
+
+/* ---------- API ---------- */
+async function post(body){
+  if (!cfg.url) throw new Error('noconfig');
+  const r = await fetch(cfg.url, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify({token:cfg.token, ...body}) });
+  const j = await r.json(); if (!j.ok) throw new Error(j.error || '寫入失敗'); return j;
+}
+async function get(params){
+  if (!cfg.url) throw new Error('noconfig');
+  const u = new URL(cfg.url);
+  Object.entries({token:cfg.token, ...params}).forEach(([k,v]) => u.searchParams.set(k,v));
+  const r = await fetch(u); const j = await r.json(); if (!j.ok) throw new Error(j.error || '讀取失敗'); return j;
+}
+async function loadMonth(ym){ if (S.cache[ym]) return S.cache[ym]; const j = await get({action:'list', month:ym}); return (S.cache[ym] = j.rows); }
+async function loadFixed(){ if (S.fixed) return S.fixed; const j = await get({action:'fixed'}); return (S.fixed = j.rows); }
+
+/* ---------- offline queue ---------- */
+const getQ = () => JSON.parse(localStorage.getItem('expenseQueue') || '[]');
+const setQ = q => { localStorage.setItem('expenseQueue', JSON.stringify(q)); updateSync(); };
+function updateSync(){ const n = getQ().length; $('#syncState').textContent = n ? `${n} 筆待同步` : ''; }
+let flushing = false;
+async function flushQ(){
+  if (flushing || !cfg.url) return; const q = getQ(); if (!q.length) return; flushing = true;
+  const left = [];
+  for (const r of q){ try { await post({action:'add', ...r}); delete S.cache[r.date.slice(0,7)]; if (r.section==='固定') S.fixed=null; } catch(e){ left.push(r); } }
+  setQ(left); flushing = false;
+  if (left.length < q.length){ toast(`已同步 ${q.length-left.length} 筆暫存支出`); refresh(); }
+}
+
+/* ---------- navigation ---------- */
+const sidebar = $('#sidebar');
+const isDesktop = () => matchMedia('(min-width:900px)').matches;
+function closeDrawer(){ sidebar.classList.remove('open'); $('#scrim').classList.remove('show'); }
+function go(p){
+  if (p === 'details'){
+    closeDrawer();
+    if (cfg.sheetUrl) window.open(cfg.sheetUrl, '_blank', 'noopener');
+    else { toast('請先連結 Google Sheet'); go('settings'); }
+    return;
+  }
+  S.page = p;
+  $$('.page').forEach(s => s.hidden = s.id !== 'p-'+p);
+  $$('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.page === p));
+  $('#pageTitle').textContent = TITLES[p];
+  closeDrawer(); refresh();
+}
+function refresh(){
+  if (S.page==='input') renderRecent();
+  if (S.page==='expense') renderExpense();
+  if (S.page==='analysis') renderAnalysis();
+  if (S.page==='settings') renderSettings();
+}
+$$('.nav-item').forEach(b => b.addEventListener('click', () => go(b.dataset.page)));
+$('#menuBtn').addEventListener('click', () => { sidebar.classList.add('open'); $('#scrim').classList.add('show'); });
+$('#scrim').addEventListener('click', closeDrawer);
+$('#collapseBtn').addEventListener('click', () => {
+  if (!isDesktop()) return closeDrawer();
+  const c = sidebar.classList.toggle('collapsed'); localStorage.setItem('sideCollapsed', c ? '1' : '0');
+});
+if (localStorage.getItem('sideCollapsed') === '1') sidebar.classList.add('collapsed');
+
+/* ---------- input page ---------- */
+function renderTabs(){
+  $$('.tab').forEach(b => { const on = b.dataset.s === S.section; b.classList.toggle('active', on); b.setAttribute('aria-selected', on); });
+  $('#itemGrid').innerHTML = SECTIONS[S.section].map(([n,e]) =>
+    `<button class="chip${S.item===n?' active':''}" data-item="${n}"><span class="em">${e}</span>${n}</button>`).join('');
+  $('#fixedHint').hidden = S.section !== '固定';
+}
+function renderDate(){ $('#dateText').textContent = dateLabel(S.date); $('#todayTag').textContent = S.date === todayStr() ? '今天' : ''; }
+$$('.tab').forEach(b => b.addEventListener('click', () => { S.section = b.dataset.s; S.item = null; renderTabs(); }));
+$('#itemGrid').addEventListener('click', e => { const c = e.target.closest('.chip'); if (!c) return; S.item = c.dataset.item; renderTabs(); $('#amount').focus(); });
+$('#amount').addEventListener('input', e => { e.target.value = e.target.value.replace(/[^\d.]/g,'').replace(/(\..*)\./g,'$1'); });
+$('#amount').addEventListener('keydown', e => { if (e.key === 'Enter') $('#remark').focus(); });
+$('#remark').addEventListener('keydown', e => { if (e.key === 'Enter') save(); });
+$('#saveBtn').addEventListener('click', save);
+
+async function save(){
+  const amt = parseFloat($('#amount').value);
+  if (!S.item) return toast('請先選擇項目');
+  if (!(amt > 0)) return toast('請輸入金額');
+  if (!cfg.url){ toast('請先連結 Google Sheet'); return go('settings'); }
+  const rec = { id:uid(), date:S.date, section:S.section, item:S.item, amount:Math.round(amt*100)/100, remark:$('#remark').value.trim() };
+  const btn = $('#saveBtn'); btn.disabled = true;
+  try {
+    await post({action:'add', ...rec});
+    toast(rec.section === '固定' ? '已儲存，下個月起自動入帳' : '已儲存');
+  } catch(e){
+    if (e.message === 'unauthorized'){ toast(errMsg(e)); btn.disabled = false; return; }
+    setQ([...getQ(), rec]); toast('未能連線，已暫存並會自動重試');
+  }
+  delete S.cache[rec.date.slice(0,7)]; if (rec.section === '固定') S.fixed = null;
+  $('#amount').value = ''; $('#remark').value = ''; S.item = null; renderTabs(); btn.disabled = false;
+  renderRecent();
+}
+
+async function renderRecent(){
+  const box = $('#recentList');
+  if (!cfg.url){ box.innerHTML = '<p class="muted small">連結 Google Sheet 後，這裡會顯示本月最近 5 筆支出。</p>'; return; }
+  try {
+    const rows = await loadMonth(todayStr().slice(0,7));
+    const q = getQ().filter(r => r.date.slice(0,7) === todayStr().slice(0,7)).map(r => ({...r, pending:true}));
+    const list = [...q, ...[...rows].sort((a,b) => String(b.createdAt).localeCompare(String(a.createdAt)))].slice(0,5);
+    box.innerHTML = list.length ? list.map(r => recRow(r, false)).join('') : '<p class="muted small">本月未有紀錄。選擇項目並輸入金額即可新增。</p>';
+  } catch(e){ box.innerHTML = `<p class="muted small">${esc(errMsg(e))}</p>`; }
+}
+function recRow(r, withDel){
+  const sub = `${r.date.slice(5).replace('-','/')}，${r.section}${r.remark ? '，'+esc(r.remark) : ''}${r.pending ? '，待同步' : ''}`;
+  return `<div class="rec"><span class="em">${iconOf(r.section,r.item)}</span>
+    <div class="main"><div>${esc(r.item)}</div><div class="sub">${sub}</div></div>
+    <span class="amt">${money(r.amount)}</span>
+    ${withDel ? `<button class="ghost danger" data-del="${esc(r.id)}">刪除</button>` : ''}</div>`;
+}
+
+/* ---------- date wheel ---------- */
+let tmp = null;
+function buildCol(el, vals, suffix, sel){
+  el._vals = vals;
+  el.innerHTML = '<div class="wsp"></div><div class="wsp"></div>' +
+    vals.map(v => `<div class="wi" data-v="${v}">${v}${suffix}</div>`).join('') + '<div class="wsp"></div><div class="wsp"></div>';
+  const i = Math.max(0, vals.indexOf(sel)); el.scrollTop = i * IH; mark(el, i);
+}
+function mark(el, i){ el.querySelectorAll('.wi').forEach((n,k) => n.classList.toggle('sel', k === i)); }
+function bindWheel(el, key){
+  let t;
+  el.addEventListener('scroll', () => {
+    clearTimeout(t);
+    t = setTimeout(() => {
+      const i = Math.min(el._vals.length-1, Math.max(0, Math.round(el.scrollTop / IH)));
+      mark(el, i); const v = el._vals[i];
+      if (tmp[key] === v) return; tmp[key] = v;
+      if (key !== 'd'){
+        const max = daysIn(tmp.y, tmp.m); if (tmp.d > max) tmp.d = max;
+        if ($('#wD')._vals.length !== max) buildCol($('#wD'), range(1,max), '日', tmp.d);
+      }
+    }, 80);
+  });
+  el.addEventListener('click', e => { const it = e.target.closest('.wi'); if (!it) return;
+    el.scrollTo({ top: el._vals.indexOf(Number(it.dataset.v)) * IH, behavior:'smooth' }); });
+}
+function openPicker(){
+  const [y,m,d] = S.date.split('-').map(Number); tmp = {y,m,d};
+  $('#dateOverlay').classList.add('show');
+  requestAnimationFrame(() => {
+    const cy = new Date().getFullYear();
+    buildCol($('#wY'), range(cy-5, cy+1), '年', y);
+    buildCol($('#wM'), range(1,12), '月', m);
+    buildCol($('#wD'), range(1, daysIn(y,m)), '日', d);
+  });
+}
+const closePicker = () => $('#dateOverlay').classList.remove('show');
+bindWheel($('#wY'),'y'); bindWheel($('#wM'),'m'); bindWheel($('#wD'),'d');
+$('#dateBtn').addEventListener('click', openPicker);
+$('#dpCancel').addEventListener('click', closePicker);
+$('#dpOk').addEventListener('click', () => { S.date = `${tmp.y}-${pad(tmp.m)}-${pad(tmp.d)}`; renderDate(); closePicker(); });
+$('#dpToday').addEventListener('click', () => { S.date = todayStr(); renderDate(); closePicker(); });
+
+/* ---------- expense page ---------- */
+$$('[data-exp]').forEach(b => b.addEventListener('click', () => { S.expYm = shiftYm(S.expYm, Number(b.dataset.exp)); renderExpense(); }));
+async function renderExpense(){
+  $('#expMonth').textContent = ymLabel(S.expYm);
+  const box = $('#expBody'); box.innerHTML = '<p class="muted">載入中…</p>';
+  try {
+    const [rows, fixed] = await Promise.all([loadMonth(S.expYm), loadFixed()]);
+    const total = sum(rows);
+    const bySec = ORDER.map(s => [s, sum(rows.filter(r => r.section === s))]);
+    const max = Math.max(...bySec.map(x => x[1]), 1);
+    let html = `<div class="card"><div class="muted small">本月合計（${rows.length} 筆）</div><div class="total">${money(total)}</div>
+      ${bySec.map(([s,v]) => `<div class="bar-row"><span>${s}</span><span class="bar"><i style="width:${v/max*100}%"></i></span><span class="num">${money(v)}</span></div>`).join('')}</div>`;
+
+    const fx = [...fixed].sort((a,b) => (b.active - a.active) || b.amount - a.amount);
+    const fxTotal = sum(fixed.filter(f => f.active));
+    html += `<h2>固定項目（每月 ${money(fxTotal)}）</h2><div class="card list">` + (fx.length ? fx.map(f => {
+      const last = f.history ? f.history.split('; ').pop() : '';
+      return `<div class="rec${f.active ? '' : ' off'}"><span class="em">${iconOf('固定', f.item)}</span>
+        <div class="main"><div>${esc(f.remark || f.item)}</div>
+        <div class="sub">${esc(f.item)}，${ymLabel(f.startYm)}起${f.active ? '' : '，已停用'}${last ? '，最近調整 '+esc(last) : ''}</div></div>
+        <span class="amt">${money(f.amount)}<small>/月</small></span>
+        <button class="ghost" data-fx="${esc(f.id)}">修改</button></div>`;
+    }).join('') : '<p class="muted small">未有固定項目。在「新增支出」選擇「固定」即可加入。</p>') + '</div>';
+
+    const sorted = [...rows].sort((a,b) => b.date.localeCompare(a.date) || String(b.createdAt).localeCompare(String(a.createdAt)));
+    let lastDay = '', list = '';
+    sorted.forEach(r => { if (r.date !== lastDay){ lastDay = r.date; list += `<div class="day-head">${dateLabel(r.date)}</div>`; } list += recRow(r, true); });
+    html += `<h2>支出明細</h2><div class="card list">${list || '<p class="muted small">此月份沒有支出紀錄。</p>'}</div>`;
+    box.innerHTML = html;
+  } catch(e){ box.innerHTML = `<p class="muted">${esc(errMsg(e))}</p>`; }
+}
+$('#expBody').addEventListener('click', async e => {
+  const del = e.target.closest('[data-del]'), fx = e.target.closest('[data-fx]');
+  if (del){
+    const r = (S.cache[S.expYm] || []).find(x => x.id === del.dataset.del); if (!r) return;
+    if (!confirm(`刪除 ${r.date} 的「${r.item} ${money(r.amount)}」？`)) return;
+    try { await post({action:'deleteRecord', id:r.id}); delete S.cache[S.expYm]; toast('已刪除'); renderExpense(); }
+    catch(err){ toast(errMsg(err)); }
+  }
+  if (fx) openFixed(fx.dataset.fx);
+});
+
+/* ---------- fixed item editor ---------- */
+function openFixed(id){
+  const f = (S.fixed || []).find(x => x.id === id); if (!f) return; S.editing = f;
+  $('#fxTitle').textContent = `修改：${f.item}`;
+  $('#fxName').value = f.remark || ''; $('#fxAmount').value = f.amount; $('#fxApply').checked = false;
+  $('#fxHist').textContent = f.history ? `調整紀錄：${f.history}` : '';
+  $('#fxToggle').textContent = f.active ? '停用此項目' : '重新啟用';
+  $('#fxOverlay').classList.add('show');
+}
+const closeFixed = () => $('#fxOverlay').classList.remove('show');
+$('#fxClose').addEventListener('click', closeFixed);
+$('#fxSave').addEventListener('click', async () => {
+  const f = S.editing, amt = parseFloat($('#fxAmount').value);
+  if (!(amt > 0)) return toast('請輸入有效金額');
+  try {
+    await post({action:'updateFixed', id:f.id, amount:Math.round(amt*100)/100, remark:$('#fxName').value.trim(), applyThisMonth:$('#fxApply').checked});
+    S.fixed = null; if ($('#fxApply').checked) delete S.cache[todayStr().slice(0,7)];
+    closeFixed(); toast('已更新固定項目'); renderExpense();
+  } catch(e){ toast(errMsg(e)); }
+});
+$('#fxToggle').addEventListener('click', async () => {
+  const f = S.editing;
+  if (f.active && !confirm(`停用「${f.remark || f.item}」？下個月起不再自動入帳，過往紀錄會保留。`)) return;
+  try {
+    await post({action:'toggleFixed', id:f.id, active:!f.active});
+    S.fixed = null; closeFixed(); toast(f.active ? '已停用，下個月起不再自動入帳' : '已重新啟用'); renderExpense();
+  } catch(e){ toast(errMsg(e)); }
+});
+
+/* ---------- analysis page ---------- */
+$$('[data-an]').forEach(b => b.addEventListener('click', () => { S.anYm = shiftYm(S.anYm, Number(b.dataset.an)); renderAnalysis(); }));
+function pieSvg(slices, total){
+  if (slices.length === 1) return `<svg class="pie" viewBox="0 0 220 220" role="img" aria-label="支出分佈"><circle cx="110" cy="110" r="100" fill="${COLORS[0]}"/></svg>`;
+  const R = 100, C = 110; let a = -Math.PI/2;
+  const paths = slices.map(([k,v],i) => {
+    const ang = v/total*Math.PI*2, x1 = C+R*Math.cos(a), y1 = C+R*Math.sin(a); a += ang;
+    const x2 = C+R*Math.cos(a), y2 = C+R*Math.sin(a);
+    return `<path d="M${C},${C} L${x1.toFixed(2)},${y1.toFixed(2)} A${R},${R} 0 ${ang>Math.PI?1:0} 1 ${x2.toFixed(2)},${y2.toFixed(2)} Z" fill="${COLORS[i%COLORS.length]}" stroke="var(--surface)" stroke-width="2"><title>${esc(k)} ${money(v)}</title></path>`;
+  }).join('');
+  return `<svg class="pie" viewBox="0 0 220 220" role="img" aria-label="支出分佈">${paths}</svg>`;
+}
+async function renderAnalysis(){
+  $('#anMonth').textContent = ymLabel(S.anYm) + '報告';
+  const box = $('#anBody'); box.innerHTML = '<p class="muted">載入中…</p>';
+  try {
+    const prevYm = shiftYm(S.anYm, -1);
+    const [rows, prev] = await Promise.all([loadMonth(S.anYm), loadMonth(prevYm)]);
+    if (!rows.length){ box.innerHTML = '<div class="card"><p class="muted">此月份沒有支出紀錄。</p></div>'; return; }
+    const total = sum(rows), ptotal = sum(prev);
+    const multi = new Set(); const seen = {};
+    rows.forEach(r => { (seen[r.item] ||= new Set()).add(r.section); if (seen[r.item].size > 1) multi.add(r.item); });
+    const g = {};
+    rows.forEach(r => { const k = S.anMode === 'section' ? r.section : (multi.has(r.item) ? `${r.item}（${r.section}）` : r.item); g[k] = (g[k]||0) + r.amount; });
+    let slices = Object.entries(g).sort((a,b) => b[1]-a[1]);
+    if (slices.length > 8) slices = [...slices.slice(0,7), ['其餘', slices.slice(7).reduce((a,x) => a+x[1], 0)]];
+    const top = [...rows].sort((a,b) => b.amount - a.amount).slice(0,3);
+    const delta = ptotal ? (total - ptotal) / ptotal * 100 : null;
+    const fixedShare = sum(rows.filter(r => r.section === '固定')) / total * 100;
+
+    box.innerHTML = `
+      <div class="card"><div class="stats">
+        <div><div class="muted small">總支出（${rows.length} 筆）</div><div class="total">${money(total)}</div></div>
+        <div><div class="muted small">對比${ymLabel(prevYm)}</div><div class="delta">${delta === null ? '無資料' : (delta >= 0 ? '▲ ' : '▼ ') + Math.abs(delta).toFixed(1) + '%'}</div></div>
+        <div><div class="muted small">固定支出佔比</div><div class="delta">${fixedShare.toFixed(1)}%</div></div>
+      </div></div>
+      <div class="an-grid">
+        <div class="card">
+          <div class="seg" role="tablist">
+            <button data-mode="section" class="${S.anMode==='section'?'active':''}">按類別</button>
+            <button data-mode="item" class="${S.anMode==='item'?'active':''}">按項目</button>
+          </div>
+          ${pieSvg(slices, total)}
+          <div class="legend">${slices.map(([k,v],i) => `<div><i style="background:${COLORS[i%COLORS.length]}"></i><span>${esc(k)}</span><span class="num">${money(v)}</span><span class="pct">${(v/total*100).toFixed(1)}%</span></div>`).join('')}</div>
+        </div>
+        <div class="card list top3">
+          <h2 style="margin:10px 0 2px">最大 3 筆支出</h2>
+          ${top.map((r,i) => `<div class="rec"><span class="rank">${i+1}</span><span class="em">${iconOf(r.section,r.item)}</span>
+            <div class="main"><div>${esc(r.item)}${r.remark ? '，'+esc(r.remark) : ''}</div><div class="sub">${r.date}，${r.section}，佔 ${(r.amount/total*100).toFixed(1)}%</div></div>
+            <span class="amt">${money(r.amount)}</span></div>`).join('')}
+        </div>
+      </div>`;
+  } catch(e){ box.innerHTML = `<p class="muted">${esc(errMsg(e))}</p>`; }
+}
+$('#anBody').addEventListener('click', e => { const b = e.target.closest('[data-mode]'); if (!b) return; S.anMode = b.dataset.mode; renderAnalysis(); });
+
+/* ---------- settings ---------- */
+function renderSettings(){
+  $('#cfgUrl').value = cfg.url || ''; $('#cfgToken').value = cfg.token || '';
+  const n = getQ().length;
+  $('#cfgStatus').innerHTML = cfg.sheetUrl
+    ? `已連結。<a href="${esc(cfg.sheetUrl)}" target="_blank" rel="noopener">開啟 Google Sheet</a>${n ? `，${n} 筆支出待同步` : ''}`
+    : '尚未連結。';
+}
+$('#cfgSave').addEventListener('click', async () => {
+  const url = $('#cfgUrl').value.trim(), token = $('#cfgToken').value.trim();
+  if (!/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec$/.test(url)) return toast('連結應為 https://script.google.com/macros/s/…/exec');
+  const old = cfg; cfg = { url, token };
+  const btn = $('#cfgSave'); btn.disabled = true;
+  try {
+    const j = await get({action:'info'});
+    cfg.sheetUrl = j.sheetUrl; localStorage.setItem('expenseCfg', JSON.stringify(cfg));
+    S.cache = {}; S.fixed = null; toast('已連結 Google Sheet'); flushQ(); go('input');
+  } catch(e){ cfg = old; toast('連結失敗：' + errMsg(e)); }
+  btn.disabled = false;
+});
+
+/* ---------- global ---------- */
+document.addEventListener('keydown', e => { if (e.key === 'Escape'){ closePicker(); closeFixed(); closeDrawer(); } });
+$$('.overlay').forEach(o => o.addEventListener('click', e => { if (e.target === o) o.classList.remove('show'); }));
+window.addEventListener('online', flushQ);
+
+renderTabs(); renderDate(); updateSync();
+if (!cfg.url) go('settings'); else { go('input'); flushQ(); }
+</script>
+</body>
+</html>
