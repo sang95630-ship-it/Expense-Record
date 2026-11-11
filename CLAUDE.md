@@ -40,6 +40,8 @@
 | + | 金額輸入即時加千位分隔號（`fmtAmountInput`，解析用 `num()` 去逗號） | ✅ |
 | + | 常用備註快選：每個 section+項目顯示最常用 3 個備註（localStorage `remarkLog`，從已載入月份及新增紀錄累積，上限 1500 筆） | ✅ |
 | + | 樂觀寫入：按「儲存」即寫入本機佇列並更新畫面（<0.1 秒），背景同步至 GAS；失敗保留佇列，於 online／回到前台／每 30 秒重試；未同步紀錄可直接刪除 | ✅ |
+| + | 標題列右上角「同步」按鈕：送出本機佇列 → 清快取 → 重新讀取 Sheet；同步中圖示旋轉 | ✅ |
+| + | PWA：`manifest.json` + `sw.js`（index.html 網絡優先、其他靜態檔快取優先、Google Fonts SWR；GAS／匯率 API 不快取）；圖示 `icon.svg`／`icon-192/512.png`／`icon-maskable-512.png`／`apple-touch-icon.png` | ✅ |
 
 ## Google Sheet 結構
 - `Records`: ID | Date | Section | Item | Amount | Remark | CreatedAt | FixedID | Currency | FxRate | OrigAmount
@@ -63,10 +65,10 @@
 - 注意：修改 Code.gs 後須「管理部署作業 → 編輯 → 新版本」才生效
 
 ## 已知限制
+- 修改圖示／manifest 等靜態檔後，須把 `sw.js` 的 `VERSION` 加 1，否則手機會繼續用舊快取（index.html 不受影響）
 - 固定項目只從輸入月份的「下個月」起自動新增，補登過往月份不會回補
 - GAS 每次讀寫約 1–3 秒延遲
 
 ## 待決定／可能的下一步
 - 年繳項目（如保險年費）：是否在「固定」加入「週期：月／年」
 - TOKEN 外洩時的作廢流程（換 TOKEN + 重新部署）
-- PWA：加入 manifest.json，可「加入主畫面」全螢幕使用

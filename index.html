@@ -6,7 +6,12 @@
 <meta name="theme-color" content="#37474F">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="記帳簿">
 <title>記帳簿</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
@@ -61,7 +66,13 @@ main{flex:1;min-width:0;display:flex;flex-direction:column;padding-bottom:env(sa
 .topbar{display:flex;align-items:center;gap:8px;padding:calc(14px + env(safe-area-inset-top,0px)) 20px 6px;max-width:760px;width:100%;
   position:sticky;top:0;z-index:30;background:var(--bg)}
 .topbar h1{font-size:21px;margin:0;flex:1}
-#syncState{font-size:12px;color:var(--muted)}
+#syncState{font-size:12px;color:var(--muted);text-align:right}
+.sync-btn{border:0;background:none;padding:0;width:36px;height:36px;border-radius:50%;flex-shrink:0;color:var(--primary)}
+.sync-btn svg{width:100%;height:100%;display:block}
+.sync-btn .ar{fill:none;stroke:var(--primary-ink);stroke-width:44;stroke-linecap:round}
+.sync-btn .ah{fill:var(--primary-ink)}
+.sync-btn.spin svg{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(-360deg)}}
 .page{padding:8px 20px 48px;max-width:760px;width:100%}
 h2{font-size:16px;margin:28px 0 10px}
 .card{background:var(--surface);border-radius:18px;padding:16px}
@@ -198,6 +209,11 @@ a{color:inherit}
       <button class="icon-btn mobile-only" id="menuBtn" aria-label="開啟選單">☰</button>
       <h1 id="pageTitle">新增支出</h1>
       <span id="syncState"></span>
+      <button class="sync-btn" id="syncBtn" aria-label="立即同步至 Google Sheet" title="立即同步">
+        <svg viewBox="0 0 512 512" aria-hidden="true"><circle cx="256" cy="256" r="240" fill="currentColor"/>
+          <path class="ar" d="M330 160 A130 130 0 0 0 128 250"/><polygon class="ah" points="82,246 174,246 128,322"/>
+          <path class="ar" d="M182 352 A130 130 0 0 0 384 262"/><polygon class="ah" points="338,266 430,266 384,190"/></svg>
+      </button>
     </header>
 
     <!-- Input -->
@@ -417,6 +433,27 @@ async function flushQ(){
 }
 setInterval(() => { if (getQ().length) flushQ(); }, 30000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) flushQ(); });
+// 手動同步：送出本機未同步紀錄，再重新讀取 Google Sheet 最新資料
+async function manualSync(){
+  const btn = $('#syncBtn');
+  if (!cfg.url){ toast('請先連結 Google Sheet'); return go('settings'); }
+  if (btn.classList.contains('spin')) return;
+  btn.classList.add('spin');
+  try {
+    while (flushing) await new Promise(r => setTimeout(r, 200));
+    syncErr = ''; await flushQ();
+    const n = getQ().length;
+    S.cache = {}; S.fixed = null;
+    if (n) toast(`${n} 筆未能同步（${syncErr || '請稍後再試'}）`);
+    else {
+      await get({action:'info'});
+      toast('已同步，資料為最新');
+    }
+    refresh();
+  } catch(e){ toast(errMsg(e)); }
+  finally { btn.classList.remove('spin'); }
+}
+$('#syncBtn').addEventListener('click', manualSync);
 
 /* ---------- navigation ---------- */
 const sidebar = $('#sidebar');
@@ -774,6 +811,7 @@ window.addEventListener('online', flushQ);
 
 renderTabs(); renderDate(); updateSync(); setCur('HKD');
 setTimeout(() => { if ($('#remark').value && !cleanRemark()) $('#remark').value = ''; }, 800);
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('./sw.js').catch(() => {});
 if (!cfg.url) go('settings'); else {
   go('input'); flushQ();
   // 閒置時預載上兩個月（分析頁預設及環比用），同時累積常用備註
