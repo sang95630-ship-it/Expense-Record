@@ -94,6 +94,9 @@ h2{font-size:16px;margin:28px 0 10px}
 .fx-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:14px;color:var(--muted)}
 .fx-row input{width:7.5em;padding:6px 10px;font-variant-numeric:tabular-nums}
 .fx-row b{color:var(--ink);margin-left:auto}
+.rm-chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:-4px}
+.rm-chip{border:1px solid var(--line);background:var(--surface-2);border-radius:999px;padding:5px 12px;font-size:13px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rm-chip::before{content:"🕘 ";opacity:.6}
 #amount{border:0;background:none;font-size:42px;font-weight:700;width:100%;min-width:0;outline:none;font-variant-numeric:tabular-nums;padding:0}
 .text-in{width:100%;border:1px solid var(--line);background:var(--surface-2);border-radius:12px;padding:12px 14px;outline:none}
 .text-in:focus{border-color:var(--primary)}
@@ -213,6 +216,7 @@ a{color:inherit}
           <input class="text-in" id="fxRate" type="text" inputmode="decimal" aria-label="匯率"> HKD
           <b id="fxHkd"></b><span class="small" id="fxSrc" style="flex-basis:100%"></span></div>
         <input class="text-in" id="remark" name="expense-remark" type="text" placeholder="備註（選填），例如店名或用途" autocomplete="off" data-lpignore="true" data-1p-ignore>
+        <div class="rm-chips" id="remarkChips" hidden></div>
         <p class="hint" id="fixedHint" hidden>固定項目由下個月 1 號起自動入帳；加價或取消可到 Expense 頁修改。</p>
         <button class="primary" id="saveBtn">儲存支出</button>
       </div>
@@ -333,6 +337,19 @@ const curMoney = (n,c) => (CUR[c]?.[1] || c) + ' ' + Number(n).toLocaleString('e
 const amtHtml = r => r.currency && r.currency !== 'HKD'
   ? `${curMoney(r.origAmount, r.currency)}<small class="hk">≈ ${money(r.amount)}</small>` : money(r.amount);
 const round2 = n => Math.round(n*100)/100;
+const num = v => parseFloat(String(v ?? '').replace(/,/g,''));
+const withCommas = n => { const [i,d] = String(n).split('.'); return i.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (d !== undefined ? '.'+d : ''); };
+// 金額輸入：即時加千位分隔號，最多 2 位小數，並保持游標位置
+function fmtAmountInput(el){
+  const raw = el.value, pos = el.selectionStart ?? raw.length;
+  const before = raw.slice(0, pos).replace(/[^\d.]/g,'').length;
+  let v = raw.replace(/[^\d.]/g,'').replace(/(\..*)\./g,'$1');
+  let [i, d] = v.split('.'); i = i.replace(/^0+(?=\d)/,'');
+  if (i === '' && d !== undefined) i = '0';
+  el.value = withCommas(d !== undefined ? i + '.' + d.slice(0,2) : i);
+  let n = 0, k = 0; while (k < el.value.length && n < before){ if (/[\d.]/.test(el.value[k])) n++; k++; }
+  try { el.setSelectionRange(k, k); } catch(e){}
+}
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const iconOf = (s,i) => (SECTIONS[s]||[]).find(x=>x[0]===i)?.[1] || '•';
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)+Math.random().toString(36).slice(2));
@@ -364,21 +381,42 @@ async function get(params){
   Object.entries({token:cfg.token, ...params}).forEach(([k,v]) => u.searchParams.set(k,v));
   const r = await fetch(u); const j = await r.json(); if (!j.ok) throw new Error(j.error || '讀取失敗'); return j;
 }
-async function loadMonth(ym){ if (S.cache[ym]) return S.cache[ym]; const j = await get({action:'list', month:ym}); return (S.cache[ym] = j.rows); }
+async function loadMonth(ym){ if (S.cache[ym]) return S.cache[ym]; const j = await get({action:'list', month:ym}); learnRemarks(j.rows); return (S.cache[ym] = j.rows); }
+// 伺服器資料 + 本機未同步紀錄（待同步者標示 pending）
+async function monthRows(ym){ const rows = await loadMonth(ym); return [...rows, ...getQ().filter(r => r.date.slice(0,7) === ym).map(r => ({...r, pending:true}))]; }
 async function loadFixed(){ if (S.fixed) return S.fixed; const j = await get({action:'fixed'}); return (S.fixed = j.rows); }
 
 /* ---------- offline queue ---------- */
 const getQ = () => JSON.parse(localStorage.getItem('expenseQueue') || '[]');
 const setQ = q => { localStorage.setItem('expenseQueue', JSON.stringify(q)); updateSync(); };
-function updateSync(){ const n = getQ().length; $('#syncState').textContent = n ? `${n} 筆待同步` : ''; }
-let flushing = false;
-async function flushQ(){
-  if (flushing || !cfg.url) return; const q = getQ(); if (!q.length) return; flushing = true;
-  const left = [];
-  for (const r of q){ try { await post({action:'add', ...r}); delete S.cache[r.date.slice(0,7)]; if (r.section==='固定') S.fixed=null; } catch(e){ left.push(r); } }
-  setQ(left); flushing = false;
-  if (left.length < q.length){ toast(`已同步 ${q.length-left.length} 筆暫存支出`); refresh(); }
+let flushing = false, inFlight = null, syncErr = '';
+function updateSync(){
+  const n = getQ().length;
+  $('#syncState').textContent = !n ? '' : syncErr ? `${n} 筆未同步（${syncErr}）` : flushing ? `同步中…（${n}）` : `${n} 筆待同步`;
 }
+// 背景同步：逐筆送出，成功即從佇列移除（以 id 移除，避免與新增的紀錄互相覆蓋）
+async function flushQ(){
+  if (flushing || !cfg.url || !getQ().length) return;
+  if (navigator.onLine === false){ syncErr = '離線'; updateSync(); return; }
+  flushing = true; syncErr = ''; updateSync();
+  let synced = 0;
+  try {
+    let r;
+    while ((r = getQ()[0])){
+      inFlight = r.id;
+      try { await post({action:'add', ...r}); }
+      catch(e){ syncErr = e.message === 'unauthorized' ? '密碼錯誤' : e instanceof TypeError ? '離線' : e.message; break; }
+      setQ(getQ().filter(x => x.id !== r.id)); synced++;
+      const ym = r.date.slice(0,7);
+      if (S.cache[ym] && !S.cache[ym].some(x => x.id === r.id)) S.cache[ym].push({...r, createdAt:new Date().toISOString(), fixedId:r.section === '固定' ? 'pending' : ''});
+      if (r.section === '固定') S.fixed = null;
+    }
+  } finally { inFlight = null; flushing = false; updateSync(); }
+  if (synced && S.page !== 'input') refresh();
+  else if (synced) renderRecent();
+}
+setInterval(() => { if (getQ().length) flushQ(); }, 30000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) flushQ(); });
 
 /* ---------- navigation ---------- */
 const sidebar = $('#sidebar');
@@ -419,6 +457,7 @@ function renderTabs(){
     `<button class="chip${S.item===n?' active':''}" data-item="${n}"><span class="em">${e}</span>${n}</button>`).join('');
   $('#fixedHint').hidden = S.section !== '固定';
   $('#cur').disabled = S.section === '固定';
+  renderRemarkChips();
 }
 
 /* ---------- 幣種／匯率 ---------- */
@@ -452,7 +491,7 @@ function setCur(code){
   if (!fxLive || fxLive.date !== todayStr()) loadRates().then(() => { if (S.cur === code && !manual) setCur(code); });
 }
 function updHkd(){
-  const a = parseFloat($('#amount').value), r = parseFloat($('#fxRate').value);
+  const a = num($('#amount').value), r = parseFloat($('#fxRate').value);
   $('#fxHkd').textContent = a > 0 && r > 0 ? '≈ ' + money(round2(a*r)) : '';
 }
 $('#cur').addEventListener('change', e => { setCur(e.target.value); if (S.section === '旅遊') lsSet('lastTravelCur', S.cur); });
@@ -466,15 +505,38 @@ $('#fxSrc').addEventListener('click', () => { const m = lsGet('fxManual', {}); d
 function renderDate(){ $('#dateText').textContent = dateLabel(S.date); $('#todayTag').textContent = S.date === todayStr() ? '今天' : ''; }
 $$('.tab').forEach(b => b.addEventListener('click', () => { S.section = b.dataset.s; S.item = null; renderTabs(); setCur(S.section === '旅遊' ? lsGet('lastTravelCur', 'HKD') : 'HKD'); }));
 $('#itemGrid').addEventListener('click', e => { const c = e.target.closest('.chip'); if (!c) return; S.item = c.dataset.item; renderTabs(); $('#amount').focus(); });
-$('#amount').addEventListener('input', e => { e.target.value = e.target.value.replace(/[^\d.]/g,'').replace(/(\..*)\./g,'$1'); updHkd(); });
+$('#amount').addEventListener('input', e => { fmtAmountInput(e.target); updHkd(); });
+$('#fxAmount').addEventListener('input', e => fmtAmountInput(e.target));
 $('#amount').addEventListener('keydown', e => { if (e.key === 'Enter') $('#remark').focus(); });
 $('#remark').addEventListener('keydown', e => { if (e.key === 'Enter') save(); });
 $('#saveBtn').addEventListener('click', save);
 
+/* ---------- 常用備註（每個 section+項目 記錄最常用 3 個） ---------- */
+function learnRemarks(rows){
+  const log = lsGet('remarkLog', {}); let changed = false;
+  rows.forEach(r => { const rm = String(r.remark || '').trim(); if (!rm || log[r.id] || /^https?:\/\//.test(rm)) return;
+    log[r.id] = [`${r.section}|${r.item}`, rm, Date.parse(r.createdAt) || Date.now()]; changed = true; });
+  if (!changed) return;
+  const ids = Object.keys(log);
+  if (ids.length > 1500) ids.sort((a,b) => log[a][2] - log[b][2]).slice(0, ids.length - 1500).forEach(id => delete log[id]);
+  lsSet('remarkLog', log);
+}
+function topRemarks(section, item){
+  const k = `${section}|${item}`, m = {};
+  Object.values(lsGet('remarkLog', {})).forEach(([kk, rm, ts]) => { if (kk !== k) return; const x = (m[rm] ||= {n:0, ts:0}); x.n++; x.ts = Math.max(x.ts, ts); });
+  return Object.entries(m).sort((a,b) => b[1].n - a[1].n || b[1].ts - a[1].ts).slice(0,3).map(x => x[0]);
+}
+function renderRemarkChips(){
+  const box = $('#remarkChips'), list = S.item ? topRemarks(S.section, S.item) : [];
+  box.hidden = !list.length;
+  box.innerHTML = list.map(r => `<button type="button" class="rm-chip" data-rm="${esc(r)}">${esc(r)}</button>`).join('');
+}
+$('#remarkChips').addEventListener('click', e => { const b = e.target.closest('[data-rm]'); if (!b) return; $('#remark').value = b.dataset.rm; $('#saveBtn').focus(); });
+
 // 防止瀏覽器密碼管理員把設定頁的 /exec 連結當成「使用者名稱」自動填入備註
 function cleanRemark(){ const v = $('#remark').value.trim(); return /^https:\/\/script\.google\.com\/macros\//.test(v) ? '' : v; }
 async function save(){
-  const amt = parseFloat($('#amount').value);
+  const amt = num($('#amount').value);
   if (!S.item) return toast('請先選擇項目');
   if (!(amt > 0)) return toast('請輸入金額');
   if (!cfg.url){ toast('請先連結 Google Sheet'); return go('settings'); }
@@ -484,28 +546,24 @@ async function save(){
   const orig = round2(amt);
   const rec = { id:uid(), date:S.date, section:S.section, item:S.item, amount:round2(orig*rate), remark:cleanRemark(),
     currency:cur, fxRate:rate, origAmount:orig };
-  const btn = $('#saveBtn'); btn.disabled = true;
-  try {
-    await post({action:'add', ...rec});
-    toast(rec.section === '固定' ? '已儲存，下個月起自動入帳' : '已儲存');
-  } catch(e){
-    if (e.message === 'unauthorized'){ toast(errMsg(e)); btn.disabled = false; return; }
-    setQ([...getQ(), rec]); toast('未能連線，已暫存並會自動重試');
-  }
-  delete S.cache[rec.date.slice(0,7)]; if (rec.section === '固定') S.fixed = null;
-  $('#amount').value = ''; $('#remark').value = ''; S.item = null; renderTabs(); updHkd(); btn.disabled = false;
-  renderRecent();
+  // 樂觀寫入：先存入本機佇列並即時更新畫面，再於背景同步至 Google Sheet
+  setQ([...getQ(), rec]); learnRemarks([{...rec, createdAt:new Date().toISOString()}]);
+  toast(rec.section === '固定' ? '已儲存，下個月起自動入帳' : navigator.onLine === false ? '已儲存在本機，有網絡時自動同步' : '已儲存');
+  $('#amount').value = ''; $('#remark').value = ''; S.item = null; renderTabs(); updHkd();
+  renderRecent(); flushQ();
 }
 
 async function renderRecent(){
   const box = $('#recentList');
   if (!cfg.url){ box.innerHTML = '<p class="muted small">連結 Google Sheet 後，這裡會顯示本月最近 5 筆支出。</p>'; return; }
   try {
-    const rows = await loadMonth(todayStr().slice(0,7));
-    const q = getQ().filter(r => r.date.slice(0,7) === todayStr().slice(0,7)).map(r => ({...r, pending:true}));
-    const list = [...q, ...[...rows].sort((a,b) => String(b.createdAt).localeCompare(String(a.createdAt)))].slice(0,5);
+    const rows = await monthRows(todayStr().slice(0,7));
+    const list = rows.sort((a,b) => (b.pending|0) - (a.pending|0) || String(b.createdAt).localeCompare(String(a.createdAt))).slice(0,5);
     box.innerHTML = list.length ? list.map(r => recRow(r, false)).join('') : '<p class="muted small">本月未有紀錄。選擇項目並輸入金額即可新增。</p>';
-  } catch(e){ box.innerHTML = `<p class="muted small">${esc(errMsg(e))}</p>`; }
+  } catch(e){
+    const q = getQ().map(r => ({...r, pending:true})).reverse().slice(0,5);
+    box.innerHTML = (q.length ? q.map(r => recRow(r, false)).join('') : '') + `<p class="muted small">${esc(errMsg(e))}</p>`;
+  }
 }
 function recRow(r, withDel){
   const sub = `${r.date.slice(5).replace('-','/')}，${r.section}${r.remark ? '，'+esc(r.remark) : ''}${r.pending ? '，待同步' : ''}`;
@@ -564,7 +622,7 @@ async function renderExpense(){
   $('#expMonth').textContent = ymLabel(S.expYm);
   const box = $('#expBody'); box.innerHTML = '<p class="muted">載入中…</p>';
   try {
-    const [rows, fixed] = await Promise.all([loadMonth(S.expYm), loadFixed()]);
+    const [rows, fixed] = await Promise.all([monthRows(S.expYm), loadFixed()]);
     const total = sum(rows);
     const bySec = ORDER.map(s => [s, sum(rows.filter(r => r.section === s))]);
     const max = Math.max(...bySec.map(x => x[1]), 1);
@@ -592,8 +650,11 @@ async function renderExpense(){
 $('#expBody').addEventListener('click', async e => {
   const del = e.target.closest('[data-del]'), fx = e.target.closest('[data-fx]');
   if (del){
-    const r = (S.cache[S.expYm] || []).find(x => x.id === del.dataset.del); if (!r) return;
+    const id = del.dataset.del, pend = getQ().find(x => x.id === id);
+    const r = pend || (S.cache[S.expYm] || []).find(x => x.id === id); if (!r) return;
+    if (pend && inFlight === id) return toast('此紀錄正在同步，請稍後再刪除');
     if (!confirm(`刪除 ${r.date} 的「${r.item} ${r.currency && r.currency !== 'HKD' ? curMoney(r.origAmount, r.currency) : money(r.amount)}」？`)) return;
+    if (pend){ setQ(getQ().filter(x => x.id !== id)); toast('已刪除（未同步的紀錄）'); return renderExpense(); }
     try { await post({action:'deleteRecord', id:r.id}); delete S.cache[S.expYm]; toast('已刪除'); renderExpense(); }
     catch(err){ toast(errMsg(err)); }
   }
@@ -604,7 +665,7 @@ $('#expBody').addEventListener('click', async e => {
 function openFixed(id){
   const f = (S.fixed || []).find(x => x.id === id); if (!f) return; S.editing = f;
   $('#fxTitle').textContent = `修改：${f.item}`;
-  $('#fxName').value = f.remark || ''; $('#fxAmount').value = f.amount; $('#fxApply').checked = false;
+  $('#fxName').value = f.remark || ''; $('#fxAmount').value = withCommas(f.amount); $('#fxApply').checked = false;
   $('#fxHist').textContent = f.history ? `調整紀錄：${f.history}` : '';
   $('#fxToggle').textContent = f.active ? '停用此項目' : '重新啟用';
   $('#fxOverlay').classList.add('show');
@@ -612,7 +673,7 @@ function openFixed(id){
 const closeFixed = () => $('#fxOverlay').classList.remove('show');
 $('#fxClose').addEventListener('click', closeFixed);
 $('#fxSave').addEventListener('click', async () => {
-  const f = S.editing, amt = parseFloat($('#fxAmount').value);
+  const f = S.editing, amt = num($('#fxAmount').value);
   if (!(amt > 0)) return toast('請輸入有效金額');
   try {
     await post({action:'updateFixed', id:f.id, amount:Math.round(amt*100)/100, remark:$('#fxName').value.trim(), applyThisMonth:$('#fxApply').checked});
@@ -646,7 +707,7 @@ async function renderAnalysis(){
   const box = $('#anBody'); box.innerHTML = '<p class="muted">載入中…</p>';
   try {
     const prevYm = shiftYm(S.anYm, -1);
-    const [rows, prev] = await Promise.all([loadMonth(S.anYm), loadMonth(prevYm)]);
+    const [rows, prev] = await Promise.all([monthRows(S.anYm), monthRows(prevYm)]);
     if (!rows.length){ box.innerHTML = '<div class="card"><p class="muted">此月份沒有支出紀錄。</p></div>'; return; }
     const total = sum(rows), ptotal = sum(prev);
     const multi = new Set(); const seen = {};
@@ -713,7 +774,11 @@ window.addEventListener('online', flushQ);
 
 renderTabs(); renderDate(); updateSync(); setCur('HKD');
 setTimeout(() => { if ($('#remark').value && !cleanRemark()) $('#remark').value = ''; }, 800);
-if (!cfg.url) go('settings'); else { go('input'); flushQ(); }
+if (!cfg.url) go('settings'); else {
+  go('input'); flushQ();
+  // 閒置時預載上兩個月（分析頁預設及環比用），同時累積常用備註
+  setTimeout(() => { const m = todayStr().slice(0,7); [1,2].forEach(k => loadMonth(shiftYm(m,-k)).catch(() => {})); }, 2000);
+}
 </script>
 </body>
 </html>
