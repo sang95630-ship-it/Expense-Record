@@ -100,8 +100,14 @@ h2{font-size:16px;margin:28px 0 10px}
 .date-btn .today{margin-left:auto;font-size:12px;color:var(--muted)}
 .amount-row{display:flex;align-items:baseline;gap:8px;border-bottom:1.5px solid var(--line);padding:2px 2px 8px}
 .amount-row:focus-within{border-color:var(--primary)}
-.cur-sel{border:0;background:var(--surface-2);color:var(--ink);font-size:16px;font-weight:500;border-radius:10px;padding:6px 8px;flex-shrink:0}
-.cur-sel:disabled{opacity:.7;appearance:none;-webkit-appearance:none;background:none;padding-left:0}
+/* 幣種：平時只顯示符號，原生 select 透明覆蓋其上，下拉時才顯示完整名稱 */
+.cur-wrap{position:relative;display:inline-flex;align-items:center;gap:4px;flex-shrink:0;background:var(--surface-2);border-radius:10px;
+  padding:6px 8px 6px 10px;font-size:18px;font-weight:500;white-space:nowrap}
+.cur-wrap .caret{font-size:11px;color:var(--muted)}
+.cur-wrap:focus-within{outline:2px solid var(--primary);outline-offset:1px}
+.cur-wrap select{position:absolute;inset:0;width:100%;height:100%;opacity:0;font-size:16px;cursor:pointer;border:0}
+.cur-wrap.locked{background:none;padding-left:0;color:var(--muted)}
+.cur-wrap.locked .caret{display:none}
 .fx-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:14px;color:var(--muted)}
 .fx-row input{width:7.5em;padding:6px 10px;font-variant-numeric:tabular-nums}
 .fx-row b{color:var(--ink);margin-left:auto}
@@ -227,7 +233,7 @@ a{color:inherit}
       <div class="grid" id="itemGrid"></div>
       <div class="card form">
         <button class="date-btn" id="dateBtn"><span>📅</span><span id="dateText"></span><span class="today" id="todayTag"></span></button>
-        <div class="amount-row"><select class="cur-sel" id="cur" aria-label="幣種"></select><input id="amount" type="text" inputmode="decimal" placeholder="0" autocomplete="off" aria-label="金額"></div>
+        <div class="amount-row"><label class="cur-wrap" id="curWrap"><span id="curLabel">HK$</span><span class="caret">▼</span><select id="cur" aria-label="幣種"></select></label><input id="amount" type="text" inputmode="decimal" placeholder="0" autocomplete="off" aria-label="金額"></div>
         <div class="fx-row" id="fxRow" hidden>匯率：1 <span id="fxCode"></span> =
           <input class="text-in" id="fxRate" type="text" inputmode="decimal" aria-label="匯率"> HKD
           <b id="fxHkd"></b><span class="small" id="fxSrc" style="flex-basis:100%"></span></div>
@@ -493,7 +499,7 @@ function renderTabs(){
   $('#itemGrid').innerHTML = SECTIONS[S.section].map(([n,e]) =>
     `<button class="chip${S.item===n?' active':''}" data-item="${n}"><span class="em">${e}</span>${n}</button>`).join('');
   $('#fixedHint').hidden = S.section !== '固定';
-  $('#cur').disabled = S.section === '固定';
+  $('#cur').disabled = S.section === '固定'; $('#curWrap').classList.toggle('locked', S.section === '固定');
   renderRemarkChips();
 }
 
@@ -516,7 +522,7 @@ async function loadRates(){
 }
 const fmtRate = r => String(Number(r.toPrecision(4)));
 function setCur(code){
-  S.cur = CUR[code] ? code : 'HKD'; $('#cur').value = S.cur;
+  S.cur = CUR[code] ? code : 'HKD'; $('#cur').value = S.cur; $('#curLabel').textContent = CUR[S.cur][1];
   const foreign = S.cur !== 'HKD'; $('#fxRow').hidden = !foreign;
   if (!foreign) return;
   $('#fxCode').textContent = S.cur;
