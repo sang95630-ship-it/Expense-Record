@@ -36,7 +36,7 @@
 | + | 刪除單筆紀錄 | ✅ |
 | + | 幣種＋匯率：預設 HKD；常用 JPY／CNY／HKD／USD，其他幣種於下方 optgroup；匯率自動取 open.er-api.com（每日快取 `fxRates`），可手動修改並記住（`fxManual`）；旅遊記住上次幣種（`lastTravelCur`）；固定項目只限 HKD | ✅ |
 | + | 「其他」新增「補充品」🌿 | ✅ |
-| + | 幣種選單平時只顯示符號（`#curLabel`），透明 select 覆蓋其上，下拉時才顯示「符號＋名稱＋代碼」 | ✅ |
+| + | 幣種選單平時只顯示符號（`#curLabel`），透明 select 覆蓋其上，下拉時才顯示「符號＋名稱＋代碼」；外幣時符號以橙色強調（`--warn-bg`／`--warn-ink`）；金額靠右 | ✅ |
 | + | 標題列置頂（sticky）；Monthly Analysis 手機版圓餅圖不再超出寬度 | ✅ |
 | + | 金額輸入即時加千位分隔號（`fmtAmountInput`，解析用 `num()` 去逗號） | ✅ |
 | + | 常用備註快選：每個 section+項目顯示最常用 3 個備註（localStorage `remarkLog`，從已載入月份及新增紀錄累積，上限 1500 筆） | ✅ |

@@ -18,13 +18,13 @@
 <style>
 :root{
   --bg:#ECEFF1;--surface:#FFFFFF;--surface-2:#F4F6F7;--ink:#263238;--muted:#607D8B;--line:#DCE3E6;
-  --primary:#455A64;--primary-ink:#FFFFFF;--soft:#CFD8DC;--side:#37474F;--side-ink:#ECEFF1;--danger:#B4544B;
+  --primary:#455A64;--primary-ink:#FFFFFF;--soft:#CFD8DC;--side:#37474F;--side-ink:#ECEFF1;--danger:#B4544B;--warn-bg:#FFE0B2;--warn-ink:#8A4B00;
   color-scheme:light;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
     --bg:#151C20;--surface:#1E272C;--surface-2:#263238;--ink:#ECEFF1;--muted:#90A4AE;--line:#31414A;
-    --primary:#90A4AE;--primary-ink:#151C20;--soft:#2C3A41;--side:#10161A;--side-ink:#CFD8DC;--danger:#E08A80;
+    --primary:#90A4AE;--primary-ink:#151C20;--soft:#2C3A41;--side:#10161A;--side-ink:#CFD8DC;--danger:#E08A80;--warn-bg:#5A3A12;--warn-ink:#FFCC80;
     color-scheme:dark;
   }
 }
@@ -106,6 +106,8 @@ h2{font-size:16px;margin:28px 0 10px}
 .cur-wrap .caret{font-size:11px;color:var(--muted)}
 .cur-wrap:focus-within{outline:2px solid var(--primary);outline-offset:1px}
 .cur-wrap select{position:absolute;inset:0;width:100%;height:100%;opacity:0;font-size:16px;cursor:pointer;border:0}
+.cur-wrap.foreign{background:var(--warn-bg);color:var(--warn-ink);font-weight:700}
+.cur-wrap.foreign .caret{color:var(--warn-ink)}
 .cur-wrap.locked{background:none;padding-left:0;color:var(--muted)}
 .cur-wrap.locked .caret{display:none}
 .fx-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:14px;color:var(--muted)}
@@ -114,7 +116,7 @@ h2{font-size:16px;margin:28px 0 10px}
 .rm-chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:-4px}
 .rm-chip{border:1px solid var(--line);background:var(--surface-2);border-radius:999px;padding:5px 12px;font-size:13px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rm-chip::before{content:"🕘 ";opacity:.6}
-#amount{border:0;background:none;font-size:42px;font-weight:700;width:100%;min-width:0;outline:none;font-variant-numeric:tabular-nums;padding:0}
+#amount{text-align:right;border:0;background:none;font-size:42px;font-weight:700;width:100%;min-width:0;outline:none;font-variant-numeric:tabular-nums;padding:0}
 .text-in{width:100%;border:1px solid var(--line);background:var(--surface-2);border-radius:12px;padding:12px 14px;outline:none}
 .text-in:focus{border-color:var(--primary)}
 .hint{font-size:13px;color:var(--muted);margin:0}
@@ -522,7 +524,7 @@ async function loadRates(){
 }
 const fmtRate = r => String(Number(r.toPrecision(4)));
 function setCur(code){
-  S.cur = CUR[code] ? code : 'HKD'; $('#cur').value = S.cur; $('#curLabel').textContent = CUR[S.cur][1];
+  S.cur = CUR[code] ? code : 'HKD'; $('#cur').value = S.cur; $('#curLabel').textContent = CUR[S.cur][1]; $('#curWrap').classList.toggle('foreign', S.cur !== 'HKD');
   const foreign = S.cur !== 'HKD'; $('#fxRow').hidden = !foreign;
   if (!foreign) return;
   $('#fxCode').textContent = S.cur;
