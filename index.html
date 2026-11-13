@@ -549,7 +549,30 @@ $('#fxRate').addEventListener('input', e => {
 $('#fxSrc').addEventListener('click', () => { const m = lsGet('fxManual', {}); delete m[S.cur]; lsSet('fxManual', m); setCur(S.cur); });
 function renderDate(){ $('#dateText').textContent = dateLabel(S.date); $('#todayTag').textContent = S.date === todayStr() ? '今天' : ''; }
 $$('.tab').forEach(b => b.addEventListener('click', () => { S.section = b.dataset.s; S.item = null; renderTabs(); setCur(S.section === '旅遊' ? lsGet('lastTravelCur', 'HKD') : 'HKD'); }));
-$('#itemGrid').addEventListener('click', e => { const c = e.target.closest('.chip'); if (!c) return; S.item = c.dataset.item; renderTabs(); $('#amount').focus(); });
+$('#itemGrid').addEventListener('click', e => { const c = e.target.closest('.chip'); if (!c) return; S.item = c.dataset.item; renderTabs(); $('#amount').focus(); keepSaveVisible(); });
+
+/* ---------- 鍵盤彈出時，確保「儲存支出」按鈕不被遮住 ---------- */
+const VV = window.visualViewport;
+let kbUntil = 0, kbT;
+function adjustForKeyboard(){
+  if (S.page !== 'input') return;
+  const visBottom = VV ? VV.offsetTop + VV.height : innerHeight;
+  const d = Math.ceil($('#saveBtn').getBoundingClientRect().bottom - visBottom + 12);
+  if (d <= 1) return;
+  // 頁面不夠長時，臨時加底部空白，令頁面可以向下捲
+  const room = document.documentElement.scrollHeight - innerHeight - scrollY;
+  if (room < d) $('#p-input').style.paddingBottom = (48 + d - room + 8) + 'px';
+  scrollTo({ top: scrollY + d, behavior: 'smooth' });
+}
+function keepSaveVisible(){
+  kbUntil = Date.now() + 1500;
+  clearTimeout(kbT); kbT = setTimeout(adjustForKeyboard, 350); // 鍵盤已開啟（再次選類別）或不支援 visualViewport 時
+}
+if (VV) VV.addEventListener('resize', () => {
+  if (VV.height >= innerHeight * 0.85) $('#p-input').style.paddingBottom = ''; // 鍵盤收起，移除臨時空白
+  if (Date.now() > kbUntil) return;
+  clearTimeout(kbT); kbT = setTimeout(adjustForKeyboard, 150); // 等鍵盤動畫完成才計算，避免多次捲動疊加
+});
 $('#amount').addEventListener('input', e => { fmtAmountInput(e.target); updHkd(); });
 $('#fxAmount').addEventListener('input', e => fmtAmountInput(e.target));
 $('#amount').addEventListener('keydown', e => { if (e.key === 'Enter') $('#remark').focus(); });
