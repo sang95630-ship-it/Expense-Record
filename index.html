@@ -619,6 +619,10 @@ async function save(){
   toast(rec.section === '固定' ? '已儲存，下個月起自動入帳' : navigator.onLine === false ? '已儲存在本機，有網絡時自動同步' : '已儲存');
   $('#amount').value = ''; $('#remark').value = ''; S.item = null; renderTabs(); updHkd();
   renderRecent(); flushQ();
+  // 儲存後收起鍵盤並回到頂部，方便記下一筆
+  kbUntil = 0; clearTimeout(kbT); document.activeElement?.blur();
+  $('#p-input').style.paddingBottom = '';
+  scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 async function renderRecent(){
