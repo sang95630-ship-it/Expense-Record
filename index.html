@@ -190,6 +190,10 @@ h2{font-size:16px;margin:28px 0 10px}
 .toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translate(-50%,20px);background:var(--side);color:var(--side-ink);
   padding:10px 18px;border-radius:12px;font-size:14px;opacity:0;pointer-events:none;transition:.2s;z-index:80;max-width:90vw;text-align:center}
 .toast.show{opacity:1;transform:translate(-50%,0)}
+.toast.has-action{display:flex;align-items:center;gap:6px;text-align:left;width:max-content}
+.toast.show.has-action{pointer-events:auto}
+.toast .undo{flex-shrink:0;white-space:nowrap;border-left:1px solid rgba(255,255,255,.2)!important;margin-left:6px!important}
+.toast .undo{border:0;background:none;color:#FFCC80;font-weight:700;font-size:14px;padding:4px 2px 4px 14px;margin:-4px 0}
 .steps{padding-left:20px;margin:8px 0 0;color:var(--muted);font-size:14px}
 .steps li{margin:4px 0}
 a{color:inherit}
@@ -336,6 +340,7 @@ const SECTIONS = {
   '其他': [['衣服','👕'],['電器','🔌'],['娛樂','🎮'],['醫療','💊'],['禮物','🎁'],['運動','🏋️'],['教育','📚'],['補充品','🌿'],['其他','✨']]
 };
 const ORDER = ['旅遊','日常','固定','其他'];
+const UNDO_MS = 3200; // 「復原」按鈕顯示時間
 // [代碼, 符號, 名稱, 後備匯率(1 外幣 = ? HKD，連線失敗時使用)]
 const CUR_MAIN = [['JPY','¥','日圓',0.051],['CNY','CN¥','人民幣',1.09],['HKD','HK$','港幣',1],['USD','US$','美元',7.78]];
 const CUR_MORE = [['TWD','NT$','新台幣',0.24],['KRW','₩','韓圜',0.0055],['THB','฿','泰銖',0.23],['SGD','S$','新加坡元',6.0],
@@ -385,7 +390,16 @@ const S = { page:'input', section:'日常', item:null, date:todayStr(), expYm:to
 
 /* ---------- utils ---------- */
 let toastT;
-function toast(msg, ms = 2400){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'), ms); }
+// action = { label, fn }：在提示旁顯示按鈕（例如「復原」）
+function toast(msg, ms = 2400, action){
+  const t = $('#toast'); t.textContent = ''; t.append(Object.assign(document.createElement('span'), {textContent:msg})); t.classList.toggle('has-action', !!action);
+  if (action){
+    const b = document.createElement('button'); b.className = 'undo'; b.textContent = action.label;
+    b.addEventListener('click', () => { t.classList.remove('show'); clearTimeout(toastT); action.fn(); }, { once:true });
+    t.appendChild(b);
+  }
+  t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), ms);
+}
 function errMsg(e){
   if (e.message === 'unauthorized') return '密碼不正確，請到設定頁檢查。';
   if (e.message === 'noconfig') return '尚未連結 Google Sheet，請到設定頁完成連結。';
@@ -414,6 +428,7 @@ async function loadFixed(){ if (S.fixed) return S.fixed; const j = await get({ac
 const getQ = () => JSON.parse(localStorage.getItem('expenseQueue') || '[]');
 const setQ = q => { localStorage.setItem('expenseQueue', JSON.stringify(q)); updateSync(); };
 let flushing = false, inFlight = null, syncErr = '';
+const hold = {}; // 剛儲存的紀錄暫緩同步（id → 到期時間），以便「復原」
 function updateSync(){
   const n = getQ().length;
   $('#syncState').textContent = !n ? '' : syncErr ? `${n} 筆未同步（${syncErr}）` : flushing ? `同步中…（${n}）` : `${n} 筆待同步`;
@@ -426,7 +441,7 @@ async function flushQ(){
   let synced = 0;
   try {
     let r;
-    while ((r = getQ()[0])){
+    while ((r = getQ().find(x => !(hold[x.id] > Date.now())))){
       inFlight = r.id;
       try { await post({action:'add', ...r}); }
       catch(e){ syncErr = e.message === 'unauthorized' ? '密碼錯誤' : e instanceof TypeError ? '離線' : e.message; break; }
@@ -620,15 +635,29 @@ async function save(){
   const what = `${rec.item} ${rec.currency !== 'HKD' ? `${curMoney(rec.origAmount, rec.currency)}（≈ ${money(rec.amount)}）` : money(rec.amount)}`
     + (rec.date !== todayStr() ? `，${rec.date.slice(5).replace('-','/')}` : '');
   toast(rec.section === '固定' ? `已儲存：${what}，下個月起自動入帳`
-    : navigator.onLine === false ? `已儲存在本機：${what}，有網絡時自動同步` : `已儲存：${what}`, 3200);
+    : navigator.onLine === false ? `已儲存在本機：${what}，有網絡時自動同步` : `已儲存：${what}`, UNDO_MS,
+    { label:'復原', fn:() => undoSave(rec) });
   $('#amount').value = ''; $('#remark').value = ''; S.item = null; renderTabs(); updHkd();
-  renderRecent(); flushQ();
+  renderRecent();
+  hold[rec.id] = Date.now() + UNDO_MS + 300; // 復原期間不送出，期滿才同步
+  setTimeout(() => { delete hold[rec.id]; flushQ(); }, UNDO_MS + 350);
   // 儲存後收起鍵盤並回到頂部，方便記下一筆
   kbUntil = 0; clearTimeout(kbT); document.activeElement?.blur();
   $('#p-input').style.paddingBottom = '';
   scrollTo({ top: 0, behavior: 'smooth' });
 }
 
+// 復原：從本機佇列移除，並把內容填回表格方便修改
+function undoSave(rec){
+  if (!getQ().some(x => x.id === rec.id) || inFlight === rec.id) return toast('已同步，請到 Expense 頁刪除');
+  setQ(getQ().filter(x => x.id !== rec.id)); delete hold[rec.id];
+  const log = lsGet('remarkLog', {}); if (log[rec.id]){ delete log[rec.id]; lsSet('remarkLog', log); }
+  S.section = rec.section; S.item = rec.item; S.date = rec.date;
+  renderTabs(); renderDate(); setCur(rec.currency);
+  if (rec.currency !== 'HKD') $('#fxRate').value = fmtRate(rec.fxRate);
+  $('#amount').value = withCommas(rec.origAmount); $('#remark').value = rec.remark; updHkd();
+  renderRecent(); toast('已復原，可修改後重新儲存');
+}
 async function renderRecent(){
   const box = $('#recentList');
   if (!cfg.url){ box.innerHTML = '<p class="muted small">連結 Google Sheet 後，這裡會顯示本月最近 5 筆支出。</p>'; return; }
