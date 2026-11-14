@@ -385,7 +385,7 @@ const S = { page:'input', section:'日常', item:null, date:todayStr(), expYm:to
 
 /* ---------- utils ---------- */
 let toastT;
-function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),2400); }
+function toast(msg, ms = 2400){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'), ms); }
 function errMsg(e){
   if (e.message === 'unauthorized') return '密碼不正確，請到設定頁檢查。';
   if (e.message === 'noconfig') return '尚未連結 Google Sheet，請到設定頁完成連結。';
@@ -616,7 +616,11 @@ async function save(){
     currency:cur, fxRate:rate, origAmount:orig };
   // 樂觀寫入：先存入本機佇列並即時更新畫面，再於背景同步至 Google Sheet
   setQ([...getQ(), rec]); learnRemarks([{...rec, createdAt:new Date().toISOString()}]);
-  toast(rec.section === '固定' ? '已儲存，下個月起自動入帳' : navigator.onLine === false ? '已儲存在本機，有網絡時自動同步' : '已儲存');
+  // 提示包含項目、金額（外幣附港幣換算）及非今天的日期，方便即時核對
+  const what = `${rec.item} ${rec.currency !== 'HKD' ? `${curMoney(rec.origAmount, rec.currency)}（≈ ${money(rec.amount)}）` : money(rec.amount)}`
+    + (rec.date !== todayStr() ? `，${rec.date.slice(5).replace('-','/')}` : '');
+  toast(rec.section === '固定' ? `已儲存：${what}，下個月起自動入帳`
+    : navigator.onLine === false ? `已儲存在本機：${what}，有網絡時自動同步` : `已儲存：${what}`, 3200);
   $('#amount').value = ''; $('#remark').value = ''; S.item = null; renderTabs(); updHkd();
   renderRecent(); flushQ();
   // 儲存後收起鍵盤並回到頂部，方便記下一筆
