@@ -46,24 +46,32 @@
 | + | 標題列右上角「同步」按鈕：送出本機佇列 → 清快取 → 重新讀取 Sheet；同步中圖示旋轉 | ✅ |
 | + | 同步健康狀態（設定頁）：待同步筆數、最後成功同步（localStorage `syncHealth`）、最近錯誤、伺服器版本（`API_VERSION`，前後端須一致）、最後備份時間 | ✅ |
 | + | 每週備份 `weeklyBackup()`：每週日 03:00 把所有工作表複製成新試算表至 Drive「記帳簿備份」，保留 8 份；只含資料不含程式及 TOKEN | ✅ |
+| + | 修改單筆紀錄（Expense 明細「修改」→ `#recOverlay`：日期／類別／項目／幣種／金額／匯率／備註，刪除亦移入此處）；固定項目產生的紀錄鎖定類別及幣種；未同步紀錄直接改本機佇列 | ✅ |
+| + | 固定項目週期：每月／每年（`Fixed.Cycle` = M／Y；年繳於起始月份的同月 1 號入帳）；Expense 固定合計以年繳 ÷12 攤分 | ✅ |
+| + | 自訂快選項目：設定頁編輯（emoji、名稱、次序、新增／刪除、還原預設），存於 Sheet `Items`，本機快取 `itemsCfg`；未自訂的類別用 `DEFAULT_SECTIONS` | ✅ |
+| + | 看門狗 `watchdog()`（每小時）：固定支出未入帳自動補跑、備份逾 8 日、連續 3 日未記帳（21:00 檢查）、通知轉發器 3 日無回報（第 5 期）；經 CallMeBot Signal 通知，同類每日一則，失敗入 `NOTIFY_QUEUE` 補發；每月固定入帳發摘要 | ✅ |
 | + | PWA：`manifest.json` + `sw.js`（index.html 網絡優先、其他靜態檔快取優先、Google Fonts SWR；GAS／匯率 API 不快取）；圖示 `icon.svg`／`icon-192/512.png`／`icon-maskable-512.png`／`apple-touch-icon.png` | ✅ |
 
 ## Google Sheet 結構
 - `Records`: ID | Date | Section | Item | Amount | Remark | CreatedAt | FixedID | Currency | FxRate | OrigAmount
   - Amount 一律為 HKD（分析用）；外幣支出：OrigAmount 為原幣金額，FxRate 為「1 外幣 = ? HKD」；舊表由 `ensureRecHead_()` 自動補欄位標題
-- `Fixed`: ID | Item | Amount | Remark | StartYm（純文字 yyyy-MM） | Active | UpdatedAt | History
+- `Fixed`: ID | Item | Amount | Remark | StartYm（純文字 yyyy-MM） | Active | UpdatedAt | History | Cycle（M／Y，舊表由 `ensureFixHead_()` 補標題）
+- `Items`: Section | Item | Emoji | Order（自訂快選項目）
+- 指令碼屬性：`TOKEN`（必須）、`SIGNAL_UUID`／`SIGNAL_APIKEY`（可選）；系統自動寫入 `LAST_BACKUP`、`LAST_MONTHLY`、`LAST_WATCHDOG`、`WD_SENT`、`NOTIFY_QUEUE`、`INBOX_LAST`（第 5 期）
 
 ## API（Code.gs）
-- GET `action=info` → `{sheetUrl, version, lastBackup, serverTime}`
+- GET `action=info` → `{sheetUrl, version, lastBackup, serverTime, signal, lastWatchdog, notifyQueue}`
+- GET `action=items` → `{items:{section:[[name, emoji], …]}}`
 - GET `action=list&month=yyyy-MM` → `{rows}`
 - GET `action=fixed` → `{rows}`
-- POST `add` / `deleteRecord` / `updateFixed` / `toggleFixed`
+- POST `add`（固定項目可帶 `cycle`）/ `updateRecord` / `deleteRecord` / `updateFixed`（可帶 `cycle`）/ `toggleFixed` / `saveItems`（`items` 為空即還原預設）
+- 手動函數：`setup`、`weeklyBackup`、`testSignal`
 - 所有請求需 `token`；寫入使用 `LockService`
 
 ## 部署步驟
 1. 新 Google Sheet → 擴充功能 → Apps Script → 貼上 Code.gs（毋須修改）
 2. 專案設定：時區 Asia/Hong_Kong；指令碼屬性新增 `TOKEN`；Sheet「檔案 → 設定」時區亦同
-3. 執行 `setup()` 一次（建表 + 每月 1 號 01:00 `monthlyJob` + 每週日 03:00 `weeklyBackup` trigger；需授權 Drive）
+3. 執行 `setup()` 一次（建表 + 每月 1 號 01:00 `monthlyJob` + 每週日 03:00 `weeklyBackup` + 每小時 `watchdog` trigger；需授權 Drive 及外部連線）；可選：指令碼屬性加 `SIGNAL_UUID`／`SIGNAL_APIKEY` 後執行 `testSignal`
 4. 部署 → 網頁應用程式（我／所有人）→ 取得 `/exec` URL
 5. index.html 推上 GitHub repo → Settings → Pages
 6. 網頁「設定」頁貼上 URL + TOKEN
@@ -77,7 +85,7 @@
 
 ## 改進路線圖（已排定，按期執行）
 - ✅ 第 1 期：#1 TOKEN 改存指令碼屬性、#3 每週備份、#5 同步健康狀態
-- 第 2 期：#2 修改單筆紀錄、#8 固定項目「月／年」週期、#7 自訂項目（`Settings` 表）
+- ✅ 第 2 期：#2 修改單筆紀錄、#8 固定項目「月／年」週期、#7 自訂項目（`Items` 表）＋看門狗
 - 第 3 期：#11 6–12 個月趨勢、#13 跨月搜尋、#14 月底預測、#10 每月預算（共用新的區間查詢 API）
 - 第 4 期：#12 旅程標籤、#9 主畫面長按捷徑（manifest shortcuts）
 - 第 5 期：通知自動記帳——Android 轉發器（**Tasker** 一次性付費；後備 Automate 免費版。MacroDroid 免費版現需每 2–3 日看廣告才維持巨集運作，不採用）把付款通知原文 POST 至 `action=inbox`；Code.gs 按銀行格式解析；`Merchants` 表記住「通知商戶 → 類別／項目／備註」，項目可設「餐（按時間）」按時段判斷早／午／晚餐；首次出現的商戶列入「待確認」；同金額 2 分鐘內視為重複；入帳後經 **CallMeBot Signal API** 通知（用家已在另一專案「St 美股分析」使用，見下）
