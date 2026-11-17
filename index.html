@@ -65,9 +65,17 @@ button{cursor:pointer}
 main{flex:1;min-width:0;display:flex;flex-direction:column;padding-bottom:env(safe-area-inset-bottom,0px)}
 .topbar{display:flex;align-items:center;gap:8px;padding:calc(14px + env(safe-area-inset-top,0px)) 20px 6px;max-width:760px;width:100%;
   position:sticky;top:0;z-index:30;background:var(--bg)}
-.topbar h1{font-size:21px;margin:0;flex:1}
+.topbar h1{font-size:21px;margin:0;flex:1;display:flex;align-items:center;min-width:0}
+.topbar{transition:padding .2s ease,box-shadow .2s ease}
+.topbar .tb-ic{display:none;font-size:19px;line-height:1}
+/* 下捲後縮細：標題文字轉為頁面圖示，按鈕縮小 */
+.topbar.compact{padding-top:calc(6px + env(safe-area-inset-top,0px));padding-bottom:6px;box-shadow:0 1px 0 var(--line)}
+.topbar.compact .tb-tx{display:none}
+.topbar.compact .tb-ic{display:inline}
+.topbar.compact .sync-btn{width:28px;height:28px}
+.topbar.compact .icon-btn{width:32px;height:32px;font-size:17px}
 #syncState{font-size:12px;color:var(--muted);text-align:right}
-.sync-btn{border:0;background:none;padding:0;width:36px;height:36px;border-radius:50%;flex-shrink:0;color:var(--primary)}
+.sync-btn{border:0;background:none;padding:0;width:36px;height:36px;border-radius:50%;flex-shrink:0;color:var(--primary);transition:width .2s,height .2s}
 .sync-btn svg{width:100%;height:100%;display:block}
 .sync-btn .ar{fill:none;stroke:var(--primary-ink);stroke-width:44;stroke-linecap:round}
 .sync-btn .ah{fill:var(--primary-ink)}
@@ -307,7 +315,7 @@ a{color:inherit}
   <main>
     <header class="topbar">
       <button class="icon-btn mobile-only" id="menuBtn" aria-label="開啟選單">☰</button>
-      <h1 id="pageTitle">新增支出</h1>
+      <h1 id="pageTitle"><span class="tb-ic" id="pageIcon" aria-hidden="true">✏️</span><span class="tb-tx" id="pageText">新增支出</span></h1>
       <span id="syncState"></span>
       <button class="sync-btn" id="syncBtn" aria-label="立即同步至 Google Sheet" title="立即同步">
         <svg viewBox="0 0 512 512" aria-hidden="true"><circle cx="256" cy="256" r="240" fill="currentColor"/>
@@ -689,7 +697,7 @@ function go(p){
   S.page = p;
   $$('.page').forEach(s => s.hidden = s.id !== 'p-'+p);
   $$('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.page === p));
-  $('#pageTitle').textContent = TITLES[p];
+  $('#pageText').textContent = TITLES[p]; $('#pageIcon').textContent = PAGE_ICONS[p] || '•'; $('#pageTitle').setAttribute('aria-label', TITLES[p]);
   closeDrawer(); refresh();
 }
 function refresh(){
@@ -702,6 +710,18 @@ function refresh(){
   if (S.page==='settings') renderSettings();
 }
 $$('.nav-item').forEach(b => b.addEventListener('click', () => go(b.dataset.page)));
+// 置頂列：下捲超過 60px 縮細，捲回頂部 10px 內還原（差距大於高度變化，避免來回跳動）
+const PAGE_ICONS = {input:'✏️', expense:'📋', analysis:'📈', trips:'🧳', inbox:'📥', search:'🔍', settings:'⚙️'};
+let tbTick = false;
+addEventListener('scroll', () => {
+  if (tbTick) return; tbTick = true;
+  requestAnimationFrame(() => {
+    const tb = $('.topbar'), y = scrollY;
+    if (y > 60 && !tb.classList.contains('compact')) tb.classList.add('compact');
+    else if (y < 10 && tb.classList.contains('compact')) tb.classList.remove('compact');
+    tbTick = false;
+  });
+}, { passive:true });
 $('#menuBtn').addEventListener('click', () => { sidebar.classList.add('open'); $('#scrim').classList.add('show'); });
 $('#scrim').addEventListener('click', closeDrawer);
 $('#collapseBtn').addEventListener('click', () => {
@@ -982,7 +1002,7 @@ S.wkOpen = {}; // 本次使用期間手動展開／收起的週（key = 月份|�
 function weekGroups(rows, monthTotal){
   if (!rows.length) return '';
   const [y, m] = S.expYm.split('-').map(Number), dim = daysIn(y, m), today = todayStr();
-  const weeks = {};
+  const weeks = {}, varBase = sum(rows.filter(r => r.section !== '固定')); // 比例條只計日常、其他及旅遊
   rows.forEach(r => {
     const d = Number(r.date.slice(8,10)), dow = new Date(y, m-1, d).getDay();
     const sun = d - dow, start = Math.max(1, sun); // 該週星期日（可能在上個月，則由 1 號起計）
@@ -990,7 +1010,7 @@ function weekGroups(rows, monthTotal){
     w.rows.push(r);
   });
   return Object.values(weeks).sort((a,b) => b.start - a.start).map(w => {
-    const key = `${S.expYm}|${w.start}`, tot = sum(w.rows);
+    const key = `${S.expYm}|${w.start}`, tot = sum(w.rows), vtot = sum(w.rows.filter(r => r.section !== '固定'));
     const isNow = today.slice(0,7) === S.expYm && Number(today.slice(8,10)) >= w.start && Number(today.slice(8,10)) <= w.end;
     const open = key in S.wkOpen ? S.wkOpen[key] : isNow;
     const label = w.start === w.end ? `${w.start}/ ${m}` : `${w.start} - ${w.end}/ ${m}`;
@@ -1002,7 +1022,7 @@ function weekGroups(rows, monthTotal){
     }).join('');
     return `<details class="wk" data-wk="${key}"${open ? ' open' : ''}><summary>
       <div class="wk-top"><b>${label}</b>${isNow ? '<span class="wk-now">本週</span>' : ''}<span class="cnt">${w.rows.length} 筆</span><span class="tot">${money(round2(tot))}</span>${FOLD_BTN}</div>
-      <span class="wk-bar"><i style="width:${monthTotal ? Math.max(2, tot / monthTotal * 100) : 0}%"></i></span></summary>
+      <span class="wk-bar"><i style="width:${varBase ? Math.max(vtot ? 2 : 0, vtot / varBase * 100) : 0}%"></i></span></summary>
       <div class="list" style="padding:0">${body}</div></details>`;
   }).join('');
 }
