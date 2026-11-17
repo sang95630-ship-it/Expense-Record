@@ -165,6 +165,20 @@ h2{font-size:16px;margin:28px 0 10px}
 .tbl{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px;font-variant-numeric:tabular-nums}
 .tbl td,.tbl th{padding:4px 6px;border-bottom:1px solid var(--line);text-align:right} .tbl td:first-child,.tbl th:first-child{text-align:left}
 details summary{cursor:pointer;color:var(--muted);font-size:13px;margin-top:10px}
+.ib-badge{margin-left:auto;background:var(--danger);color:#fff;border-radius:999px;font-size:11px;padding:1px 7px;font-weight:700}
+.ib-banner{display:flex;width:100%;align-items:center;gap:8px;border:0;border-radius:12px;padding:10px 14px;margin:0 0 12px;background:var(--warn-bg);color:var(--warn-ink);font-weight:500;text-align:left}
+.ib-banner span:last-child{margin-left:auto}
+.ib-card{margin-bottom:12px}
+.ib-head{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.ib-head b{font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ib-head .amt{font-weight:700;white-space:nowrap;text-align:right}
+.ib-note{font-size:13px;color:var(--st-warn);margin:6px 0 0}
+.ib-card .re-grid{margin-top:12px}
+.ib-raw{font-size:12px;color:var(--muted);word-break:break-all;margin:6px 0 0}
+.rule{display:grid;grid-template-columns:minmax(0,1fr) auto 34px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
+.rule:last-child{border-bottom:0}
+.rule select{padding:6px 8px}
+.rule button{border:1px solid var(--line);background:none;border-radius:8px;height:34px;color:var(--danger)}
 .sr-month{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);padding:12px 0 2px;font-weight:500}
 .bar{height:8px;background:var(--soft);border-radius:4px;overflow:hidden}
 .bar i{display:block;height:100%;background:var(--primary);border-radius:4px}
@@ -251,6 +265,7 @@ a{color:inherit}
     <button class="nav-item" data-page="details"><span class="ni">📑</span><span class="label">Details</span><span class="ext label">↗</span></button>
     <button class="nav-item" data-page="analysis"><span class="ni">📈</span><span class="label">Monthly Analysis</span></button>
     <div class="spacer"></div>
+    <button class="nav-item" data-page="inbox"><span class="ni">📥</span><span class="label">待確認</span><span class="ib-badge label" id="ibBadge" hidden></span></button>
     <button class="nav-item" data-page="search"><span class="ni">🔍</span><span class="label">搜尋</span></button>
     <button class="nav-item" data-page="settings"><span class="ni">⚙️</span><span class="label">設定</span></button>
   </aside>
@@ -270,6 +285,7 @@ a{color:inherit}
 
     <!-- Input -->
     <section class="page" id="p-input">
+      <button class="ib-banner" id="ibBanner" type="button" hidden><span>🔔</span><span id="ibBannerText"></span><span>›</span></button>
       <div class="tabs" role="tablist">
         <button class="tab" data-s="旅遊">旅遊</button>
         <button class="tab" data-s="日常">日常</button>
@@ -311,6 +327,14 @@ a{color:inherit}
         <button class="ghost" data-an="1" aria-label="下個月">›</button>
       </div>
       <div id="anBody"></div>
+    </section>
+
+    <!-- Inbox：通知自動記帳 -->
+    <section class="page" id="p-inbox" hidden>
+      <div id="ibBody"></div>
+      <h2>商戶規則</h2>
+      <div class="card" id="ruleBody"><p class="muted small">載入中…</p></div>
+      <p class="hint small" style="margin:8px 4px">「自動」：之後同一商戶直接入帳並經 Signal 通知；「詢問」：每次預填，按確認即可；「略過」：不記帳（例如已由固定項目入帳的電話費）。支付平台（AlipayHK、WeChat Pay 等）無法得知真正商戶，必須逐筆確認。</p>
     </section>
 
     <!-- Search -->
@@ -452,7 +476,7 @@ const PAL_L = ['#2a78d6','#eb6834','#1baf7a','#eda100','#e87ba4','#008300','#625
 const PAL_D = ['#3987e5','#d95926','#199e70','#c98500','#d55181','#0ca30c','#9085e9','#e66767'];
 const pal = () => matchMedia('(prefers-color-scheme: dark)').matches ? PAL_D : PAL_L;
 const secColor = sec => pal()[Math.max(0, ORDER.indexOf(sec))];
-const TITLES = {input:'新增支出', expense:'支出概覽', analysis:'每月分析', search:'搜尋', settings:'設定'};
+const TITLES = {input:'新增支出', expense:'支出概覽', analysis:'每月分析', inbox:'待確認消費', search:'搜尋', settings:'設定'};
 const IH = 40;
 
 const $ = s => document.querySelector(s);
@@ -537,7 +561,7 @@ async function loadFixed(){ if (S.fixed) return S.fixed; const j = await get({ac
 const getQ = () => JSON.parse(localStorage.getItem('expenseQueue') || '[]');
 const setQ = q => { localStorage.setItem('expenseQueue', JSON.stringify(q)); updateSync(); };
 let flushing = false, inFlight = null, syncErr = '';
-const API_VERSION = 5; // 與 Code.gs 的 API_VERSION 對應
+const API_VERSION = 6; // 與 Code.gs 的 API_VERSION 對應
 // 同步健康狀態（只存本機）：okAt 最後成功同步時間；err／errAt 最近一次錯誤
 function noteHealth(ok, err){
   const h = lsGet('syncHealth', {});
@@ -577,7 +601,7 @@ async function flushQ(){
   else if (synced) renderRecent();
 }
 setInterval(() => { if (getQ().length) flushQ(); }, 30000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) flushQ(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden){ flushQ(); loadInbox(); } });
 // 手動同步：送出本機未同步紀錄，再重新讀取 Google Sheet 最新資料
 async function manualSync(){
   const btn = $('#syncBtn');
@@ -588,7 +612,7 @@ async function manualSync(){
     while (flushing) await new Promise(r => setTimeout(r, 200));
     syncErr = ''; await flushQ();
     const n = getQ().length;
-    S.cache = {}; S.fixed = null; S.summary = null;
+    S.cache = {}; S.fixed = null; S.summary = null; loadInbox(true);
     if (n) toast(`${n} 筆未能同步（${syncErr || '請稍後再試'}）`);
     else {
       const j = await get({action:'info'}); noteHealth(true);
@@ -622,6 +646,7 @@ function refresh(){
   if (S.page==='expense') renderExpense();
   if (S.page==='analysis') renderAnalysis();
   if (S.page==='search') renderSearch();
+  if (S.page==='inbox') renderInbox();
   if (S.page==='settings') renderSettings();
 }
 $$('.nav-item').forEach(b => b.addEventListener('click', () => go(b.dataset.page)));
@@ -1134,6 +1159,91 @@ $('#anBody').addEventListener('click', e => {
   if (bar && bar.dataset.ym !== S.anYm){ S.anYm = bar.dataset.ym; renderAnalysis(); scrollTo({top:0, behavior:'smooth'}); }
 });
 
+/* ---------- 待確認（通知自動記帳） ---------- */
+const MEAL = '@meal';
+let ibAt = 0;
+async function loadInbox(force){
+  if (!cfg.url || (!force && Date.now() - ibAt < 60000 && S.inbox)) return S.inbox || [];
+  try { const j = await get({action:'inbox'}); S.inbox = j.rows || []; ibAt = Date.now(); } catch(e){ S.inbox = S.inbox || []; }
+  const n = S.inbox.length;
+  $('#ibBadge').hidden = !n; $('#ibBadge').textContent = n;
+  $('#ibBanner').hidden = !n; $('#ibBannerText').textContent = `${n} 筆消費通知待確認`;
+  return S.inbox;
+}
+$('#ibBanner').addEventListener('click', () => go('inbox'));
+const itemOpts = (sec, sel) => (sec === '日常' ? [[MEAL, '🍽 按時間判斷']] : [])
+  .concat(SECTIONS[sec].map(x => [x[0], `${x[1]} ${x[0]}`]))
+  .concat(sel && sel !== MEAL && !SECTIONS[sec].some(x => x[0] === sel) ? [[sel, sel]] : [])
+  .map(([v,l]) => `<option value="${esc(v)}"${v === sel ? ' selected' : ''}>${esc(l)}</option>`).join('');
+async function renderInbox(){
+  const box = $('#ibBody'); box.innerHTML = '<p class="muted">載入中…</p>';
+  const rows = await loadInbox(true);
+  box.innerHTML = rows.length ? rows.map(r => {
+    const sg = r.suggest || {}, sec = ORDER.includes(sg.section) ? sg.section : '日常';
+    const t = new Date(r.ts), time = isNaN(t) ? '' : `${pad(t.getHours())}:${pad(t.getMinutes())}`;
+    const amt = r.currency !== 'HKD' ? `${curMoney(r.origAmount, r.currency)}<small class="muted" style="display:block;font-weight:400;font-size:12px">≈ ${money(r.amount)}</small>` : money(r.amount);
+    return `<div class="card ib-card" data-ib="${esc(r.id)}">
+      <div class="ib-head"><b>${esc(r.merchant)}</b><span class="amt">${amt}</span></div>
+      <div class="sub muted small">${dateLabel(r.date)} ${time}，${esc(r.source)}${sg.generic ? '，支付平台' : sg.rule ? '' : '，新商戶'}</div>
+      ${sg.dup ? `<p class="ib-note">⚠️ ${esc(sg.dup)}</p>` : ''}
+      <div class="re-grid">
+        <label class="field">類別<select class="text-in" data-f="section">${ORDER.map(s => `<option${s === sec ? ' selected' : ''}>${s}</option>`).join('')}</select></label>
+        <label class="field">項目<select class="text-in" data-f="item">${itemOpts(sec, sg.item || MEAL)}</select></label>
+      </div>
+      <label class="field">備註<input class="text-in" data-f="remark" type="text" value="${esc(sg.remark || '')}" placeholder="例如店名" autocomplete="off"></label>
+      ${sg.generic ? '' : `<label class="field">以後「${esc(r.merchant)}」<select class="text-in" data-f="remember">
+        <option value="auto"${sg.rule ? '' : ' selected'}>自動入帳為此類別</option><option value="ask"${sg.rule ? ' selected' : ''}>每次詢問（預填此類別）</option><option value="">不記住</option></select></label>`}
+      <div class="row-btns"><button class="ghost" type="button" data-act="skip">略過</button><button class="primary" type="button" data-act="ok">確認入帳</button></div>
+      <details><summary>短訊原文</summary><p class="ib-raw">${esc(r.raw)}</p></details>
+    </div>`;
+  }).join('') : '<div class="card"><p class="muted">沒有待確認的消費通知。</p></div>';
+  renderRules();
+}
+$('#ibBody').addEventListener('change', e => {
+  if (e.target.dataset.f !== 'section') return;
+  const card = e.target.closest('[data-ib]'); card.querySelector('[data-f="item"]').innerHTML = itemOpts(e.target.value, e.target.value === '日常' ? MEAL : '');
+});
+$('#ibBody').addEventListener('click', async e => {
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  const card = b.closest('[data-ib]'), id = card.dataset.ib, r = S.inbox.find(x => x.id === id);
+  const f = k => card.querySelector(`[data-f="${k}"]`)?.value ?? '';
+  b.disabled = true;
+  try {
+    if (b.dataset.act === 'ok'){
+      const j = await post({action:'confirmInbox', id, section:f('section'), item:f('item'), remark:f('remark').trim(), remember:f('remember')});
+      delete S.cache[r.date.slice(0,7)]; S.summary = null; learnRemarks([{id, section:f('section'), item:j.item, remark:f('remark').trim(), createdAt:new Date().toISOString()}]);
+      toast(`已入帳：${j.item} ${r.currency !== 'HKD' ? curMoney(r.origAmount, r.currency) : money(r.amount)}`);
+    } else {
+      const ign = !r.suggest?.generic && confirm(`以後也略過「${r.merchant}」？\n（例如已由固定項目入帳的電話費）`);
+      await post({action:'dismissInbox', id, remember: ign ? 'ignore' : ''});
+      toast(ign ? '已略過，並記住此商戶' : '已略過');
+    }
+    S.inbox = S.inbox.filter(x => x.id !== id); ibAt = 0;
+    card.remove(); await loadInbox(true); if (!S.inbox.length) renderInbox(); else renderRules();
+  } catch(err){ toast(errMsg(err)); b.disabled = false; }
+});
+async function renderRules(){
+  const box = $('#ruleBody');
+  try {
+    const { rows } = await get({action:'merchants'});
+    box.innerHTML = rows.length ? rows.map(r => `<div class="rule" data-m="${esc(r.merchant)}">
+      <div><div>${esc(r.merchant)}</div><div class="sub muted small">${r.mode === 'ignore' ? '不記帳' : `${esc(r.section)}／${r.item === MEAL ? '按時間' : esc(r.item)}${r.remark ? '，' + esc(r.remark) : ''}`}${r.count ? `，已自動 ${r.count} 次` : ''}</div></div>
+      <select class="text-in" data-mode>${[['auto','自動'],['ask','詢問'],['ignore','略過']].map(([v,l]) => `<option value="${v}"${v === r.mode ? ' selected' : ''}>${l}</option>`).join('')}</select>
+      <button type="button" data-del aria-label="刪除規則">✕</button></div>`).join('')
+      : '<p class="muted small">未有規則。確認入帳時選擇「自動入帳」即會建立。</p>';
+  } catch(e){ box.innerHTML = `<p class="muted small">${esc(errMsg(e))}</p>`; }
+}
+$('#ruleBody').addEventListener('change', async e => {
+  if (!e.target.matches('[data-mode]')) return;
+  const m = e.target.closest('[data-m]').dataset.m;
+  try { await post({action:'saveRule', merchant:m, mode:e.target.value}); toast('已更新規則'); renderRules(); } catch(err){ toast(errMsg(err)); }
+});
+$('#ruleBody').addEventListener('click', async e => {
+  if (!e.target.matches('[data-del]')) return;
+  const m = e.target.closest('[data-m]').dataset.m; if (!confirm(`刪除「${m}」的規則？`)) return;
+  try { await post({action:'deleteRule', merchant:m}); toast('已刪除規則'); renderRules(); } catch(err){ toast(errMsg(err)); }
+});
+
 /* ---------- 搜尋 ---------- */
 let srT;
 function renderSearch(){
@@ -1291,7 +1401,7 @@ renderTabs(); renderDate(); updateSync(); setCur('HKD');
 setTimeout(() => { if ($('#remark').value && !cleanRemark()) $('#remark').value = ''; }, 800);
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('./sw.js').catch(() => {});
 if (!cfg.url) go('settings'); else {
-  go('input'); flushQ(); syncItems(); syncSettings();
+  go('input'); flushQ(); syncItems(); syncSettings(); loadInbox(true);
   // 閒置時預載上兩個月（分析頁預設及環比用），同時累積常用備註
   setTimeout(() => { const m = todayStr().slice(0,7); [1,2].forEach(k => loadMonth(shiftYm(m,-k)).catch(() => {})); }, 2000);
 }

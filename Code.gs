@@ -1,10 +1,10 @@
 /**** 記帳簿 後端：貼到 Google Sheet → 擴充功能 → Apps Script ****/
 // TOKEN 不再寫在程式碼內：請到「專案設定 → 指令碼屬性」新增屬性 TOKEN（值 = 你的密碼）。
 // 之後更新 Code.gs 可直接整份貼上；更換 TOKEN 只需改屬性值，毋須重新部署。
-const API_VERSION = 5;            // 前端用來檢查 Code.gs 是否已更新
+const API_VERSION = 6;            // 前端用來檢查 Code.gs 是否已更新
 const BACKUP_FOLDER = '記帳簿備份'; // Google Drive 備份資料夾名稱
 const BACKUP_KEEP = 8;            // 保留最近 8 份（約 2 個月）
-const REC = 'Records', FIX = 'Fixed', ITEMS = 'Items', SETTINGS = 'Settings';
+const REC = 'Records', FIX = 'Fixed', ITEMS = 'Items', SETTINGS = 'Settings', INBOX = 'Inbox', MERCH = 'Merchants';
 const WD_IDLE_DAYS = 3;           // 看門狗：連續 N 日沒有新增紀錄便提醒
 const WD_INBOX_DAYS = 3;          // 看門狗：通知轉發器 N 日沒有回報便提醒（第 5 期啟用）
 // Amount 一律為港幣；外幣支出另記 Currency / FxRate（1 外幣 = ? HKD）/ OrigAmount（原幣金額）
@@ -15,6 +15,10 @@ const FIX_HEAD = ['ID', 'Item', 'Amount', 'Remark', 'StartYm', 'Active', 'Update
 const ITEMS_HEAD = ['Section', 'Item', 'Emoji', 'Order'];
 // 鍵值設定，例如 budget.total／budget.日常（每月預算，HKD）
 const SETTINGS_HEAD = ['Key', 'Value'];
+// 通知自動記帳：Inbox 收件（Status：pending／auto／confirmed／dismissed／ignored／skip）；Merchants 商戶規則（Mode：auto／ask／ignore）
+const INBOX_HEAD = ['ID', 'ReceivedAt', 'Source', 'Raw', 'Merchant', 'Currency', 'OrigAmount', 'Amount', 'TxDate', 'Status', 'RecordID', 'Suggest'];
+const MERCH_HEAD = ['Merchant', 'Section', 'Item', 'Remark', 'Mode', 'Count', 'UpdatedAt'];
+const MEAL = '@meal'; // 項目「按時間」：早／午／晚餐由交易時間決定
 
 function tz_() { return SpreadsheetApp.getActive().getSpreadsheetTimeZone(); }
 function fmt_(d, p) { return Utilities.formatDate(d, tz_(), p); }
@@ -47,7 +51,7 @@ function isOn_(v) { return v === true || String(v).toUpperCase() === 'TRUE'; }
 /** 首次執行一次：建立工作表 + 每月 1 號凌晨 1 時的 trigger */
 function setup() {
   const ss = SpreadsheetApp.getActive();
-  [[REC, REC_HEAD], [FIX, FIX_HEAD], [ITEMS, ITEMS_HEAD], [SETTINGS, SETTINGS_HEAD]].forEach(([n, h]) => {
+  [[REC, REC_HEAD], [FIX, FIX_HEAD], [ITEMS, ITEMS_HEAD], [SETTINGS, SETTINGS_HEAD], [INBOX, INBOX_HEAD], [MERCH, MERCH_HEAD]].forEach(([n, h]) => {
     const sh = ss.getSheetByName(n) || ss.insertSheet(n);
     if (sh.getLastRow() === 0) { sh.appendRow(h); sh.setFrozenRows(1); }
   });
@@ -196,6 +200,18 @@ function doGet(e) {
     if (p.action === 'list') return { rows: rows_(REC).filter(r => r[0] && ym_(r[1]) === p.month).map(recObj_) };
     if (p.action === 'fixed') return { rows: rows_(FIX).filter(r => r[0]).map(fixObj_) };
     if (p.action === 'settings') return { settings: settings_() };
+    if (p.action === 'inbox') {
+      const sh = sheet_(INBOX); if (!sh) return { rows: [] };
+      const rows = sh.getDataRange().getValues().slice(1).filter(r => r[9] === 'pending').slice(-100).map(r => ({
+        id: r[0], ts: r[1] instanceof Date ? r[1].toISOString() : String(r[1]), source: r[2], raw: r[3], merchant: r[4],
+        currency: r[5], origAmount: Number(r[6]), amount: Number(r[7]), date: ymd_(r[8]), suggest: JSON.parse(r[11] || '{}')
+      }));
+      return { rows };
+    }
+    if (p.action === 'merchants') {
+      const sh = sheet_(MERCH); if (!sh) return { rows: [] };
+      return { rows: sh.getDataRange().getValues().slice(1).filter(r => r[0]).map(r => ({ merchant: r[0], section: r[1], item: r[2], remark: r[3], mode: r[4], count: Number(r[5]) || 0 })) };
+    }
     if (p.action === 'summary') {
       // 區間彙總：{ 'yyyy-MM': { 類別: 金額, _n: 筆數 } }
       const months = {};
@@ -226,7 +242,9 @@ function doGet(e) {
 
 function doPost(e) {
   let b;
-  try { b = JSON.parse(e.postData.contents); } catch (err) { return json_({ ok: false, error: 'bad request' }); }
+  try { b = JSON.parse(e.postData.contents); }
+  catch (err) { b = e.parameter && e.parameter.action ? e.parameter : null; } // Tasker 可用 application/x-www-form-urlencoded
+  if (!b) return json_({ ok: false, error: 'bad request' });
   return handle_(b, () => {
     const lock = LockService.getScriptLock();
     lock.waitLock(15000);
@@ -273,6 +291,35 @@ function write_(b) {
       const all = keep.concat(add);
       if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, ITEMS_HEAD.length).clearContent();
       if (all.length) sh.getRange(2, 1, all.length, ITEMS_HEAD.length).setValues(all);
+      return {};
+    }
+    case 'inbox': return inbox_(b);
+    case 'confirmInbox': {
+      const ib = sheet_(INBOX), row = findRow_(ib, b.id);
+      if (!row) throw new Error('找不到此通知');
+      const v = ib.getRange(row, 1, 1, INBOX_HEAD.length).getValues()[0];
+      if (v[9] !== 'pending') throw new Error('此通知已處理');
+      const ts = v[1] instanceof Date ? v[1] : new Date();
+      const item = b.item === MEAL ? mealOf_(ts) : b.item;
+      const recId = addRecord_({ id: v[0], date: b.date || ymd_(v[8]), section: b.section, item: item, remark: b.remark || '',
+        currency: v[5], origAmount: Number(v[6]), amount: Number(v[7]) });
+      ib.getRange(row, 10, 1, 2).setValues([['confirmed', recId]]);
+      const key = merchKey_(v[4]);
+      if ((b.remember === 'auto' || b.remember === 'ask') && !isGeneric_(key)) upsertRule_(key, b.section, b.item, b.remark || '', b.remember);
+      return { item: item };
+    }
+    case 'dismissInbox': {
+      const ib = sheet_(INBOX), row = findRow_(ib, b.id);
+      if (row) {
+        ib.getRange(row, 10).setValue('dismissed');
+        if (b.remember === 'ignore') { const key = merchKey_(ib.getRange(row, 5).getValue()); if (!isGeneric_(key)) upsertRule_(key, '', '', '', 'ignore'); }
+      }
+      return {};
+    }
+    case 'saveRule': { upsertRule_(merchKey_(b.merchant), b.section || '', b.item || '', b.remark || '', b.mode); return {}; }
+    case 'deleteRule': {
+      const sh = sheet_(MERCH), key = merchKey_(b.merchant);
+      if (sh) { const v = sh.getDataRange().getValues(); for (let i = v.length - 1; i >= 1; i--) if (v[i][0] === key) sh.deleteRow(i + 1); }
       return {};
     }
     case 'saveSettings': {
@@ -327,6 +374,121 @@ function handle_(p, fn) {
   } catch (err) {
     return json_({ ok: false, error: err.message });
   }
+}
+
+/* ============ 通知自動記帳（第 5 期） ============ */
+// 各銀行短訊格式（2026-11 用家提供的實例）；新增銀行只需加一條規則
+const PARSERS = [
+  { src: '中銀信用卡', re: /中銀信用卡.*?尾號(\d{4})於(\d{1,2})\/(\d{1,2})在(.+?)交易([A-Z]{3})\s*([\d,]+(?:\.\d+)?)/,
+    map: m => ({ card: m[1], d: m[2], mo: m[3], merchant: m[4], cur: m[5], amt: m[6] }) },
+  { src: '花旗', re: /花旗銀行.*?(\d{4})\)\s*於\s*(\d{1,2})\/(\d{1,2})\s*在\s*["“]?\s*(.+?)\s*["”]?\s*有一.*?金額為\s*([A-Z]{3})\s*([\d,]+(?:\.\d+)?)/,
+    map: m => ({ card: m[1], d: m[2], mo: m[3], merchant: m[4], cur: m[5], amt: m[6] }) },
+  { src: '安信', re: /安信.*?尾數(\d{4})於(\d{1,2})\/(\d{1,2})\/(\d{4})在(.+?)消費([A-Z]{3})\s*([\d,]+(?:\.\d+)?)/,
+    map: m => ({ card: m[1], d: m[2], mo: m[3], y: m[4], merchant: m[5], cur: m[6], amt: m[7] }) },
+  { src: '中銀戶口', re: /中銀香港.*?(\d{1,2})月(\d{1,2})日賬戶\S*?(\d{3})自動轉賬(港元|[A-Z]{3})\s*([\d,]+(?:\.\d+)?)至(.+?)。?\s*$/,
+    map: m => ({ card: m[3], mo: m[1], d: m[2], cur: m[4] === '港元' ? 'HKD' : m[4], amt: m[5], merchant: (m[6].match(/\(([^)]+)\)/) || [])[1] || m[6] }) },
+  { src: '中國移動', re: /中國移動香港.*?(\d{4})-(\d{2})-(\d{2})\s+[\d:]+\s*繳款HK\$([\d,]+(?:\.\d+)?)/,
+    map: m => ({ y: m[1], mo: m[2], d: m[3], cur: 'HKD', amt: m[4], merchant: '中國移動香港' }) },
+];
+// 支付平台：通知只顯示平台名稱，無法得知真正商戶，必須逐筆確認，不建立規則
+const GENERIC = /ALIPAY|WECHAT\s*PAY|PAYME|OCTOPUS|八達通|KPAY|TAP\s*&?\s*GO|BOC\s*PAY|轉數快|FPS/i;
+const DUP_MINUTES = 15; // 不同來源、同一港元金額、15 分鐘內 → 視為可能重複
+
+function merchKey_(m) { return String(m || '').replace(/\.{2,}|…/g, '').replace(/\s+/g, ' ').trim().toUpperCase(); }
+function isGeneric_(key) { return GENERIC.test(key); }
+function mealOf_(d) {
+  const h = Number(fmt_(d, 'H')) + Number(fmt_(d, 'm')) / 60;
+  return h >= 5 && h < 11 ? '早餐' : h >= 11 && h < 16 ? '午餐' : h >= 17 && h < 23 ? '晚餐' : '零食';
+}
+function parseSms_(text, ts) {
+  for (const p of PARSERS) {
+    const m = text.match(p.re); if (!m) continue;
+    const x = p.map(m), amt = Number(String(x.amt).replace(/,/g, ''));
+    if (!(amt > 0)) return null;
+    let y = Number(x.y) || Number(fmt_(ts, 'yyyy'));
+    if (!x.y && Number(x.mo) > Number(fmt_(ts, 'M')) + 1) y--; // 12 月交易、1 月才收到
+    const date = `${y}-${('0' + x.mo).slice(-2)}-${('0' + x.d).slice(-2)}`;
+    return { source: p.src + (x.card ? ' ' + x.card : ''), merchant: String(x.merchant).trim(), cur: x.cur, amt: amt, date: date };
+  }
+  return null;
+}
+function fxRate_(cur) {
+  const cache = CacheService.getScriptCache(), hit = cache.get('fx_' + cur);
+  if (hit) return Number(hit);
+  try {
+    const j = JSON.parse(UrlFetchApp.fetch('https://open.er-api.com/v6/latest/HKD', { muteHttpExceptions: true }).getContentText());
+    if (j.rates && j.rates[cur] > 0) { const r = 1 / j.rates[cur]; cache.put('fx_' + cur, String(r), 21600); return r; }
+  } catch (e) {}
+  const FALLBACK = { JPY: 0.051, CNY: 1.09, USD: 7.78, TWD: 0.24, KRW: 0.0055, THB: 0.23, SGD: 6.0, EUR: 8.5, GBP: 10.2, MOP: 0.97 };
+  if (FALLBACK[cur]) return FALLBACK[cur];
+  throw new Error('未能取得 ' + cur + ' 匯率');
+}
+function ensureSheet_(n, head) {
+  let sh = sheet_(n);
+  if (!sh) { sh = SpreadsheetApp.getActive().insertSheet(n); sh.appendRow(head); sh.setFrozenRows(1); }
+  return sh;
+}
+function findRule_(key) {
+  const sh = sheet_(MERCH); if (!sh || !key) return null;
+  const v = sh.getDataRange().getValues();
+  // 不同卡會截短商戶名稱（例如 WING ON TR／HK WING ON TRAVEL SE），容許互相包含（至少 6 字元）
+  for (let i = 1; i < v.length; i++) {
+    const k = String(v[i][0]); if (!k) continue;
+    if (k === key || (Math.min(k.length, key.length) >= 6 && (k.indexOf(key) >= 0 || key.indexOf(k) >= 0)))
+      return { row: i + 1, key: k, section: v[i][1], item: v[i][2], remark: v[i][3], mode: v[i][4] || 'ask' };
+  }
+  return null;
+}
+function upsertRule_(key, section, item, remark, mode) {
+  const sh = ensureSheet_(MERCH, MERCH_HEAD), r = findRule_(key);
+  const m = ['auto', 'ask', 'ignore'].indexOf(mode) >= 0 ? mode : 'ask';
+  if (r) sh.getRange(r.row, 2, 1, 6).setValues([[section || r.section, item || r.item, remark, m, sh.getRange(r.row, 6).getValue(), new Date()]]);
+  else sh.appendRow([key, section, item, remark, m, 0, new Date()]);
+}
+function addRecord_(x) {
+  const rec = sheet_(REC); ensureRecHead_();
+  if (findRow_(rec, x.id)) return x.id;
+  const rate = x.currency === 'HKD' ? 1 : round2_(x.amount / x.origAmount * 1e4) / 1e4;
+  rec.appendRow([x.id, x.date, x.section, x.item, Number(x.amount), x.remark || '', new Date(), '', x.currency, rate, Number(x.origAmount)]);
+  return x.id;
+}
+function round2_(n) { return Math.round(n * 100) / 100; }
+const money_ = (cur, n) => (cur === 'HKD' ? 'HK$ ' : cur + ' ') + Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 });
+
+/** 接收 Tasker 轉發的短訊／通知原文 */
+function inbox_(b) {
+  const now = new Date(), text = String(b.text || '').replace(/\s+/g, ' ').trim();
+  props_().setProperty('INBOX_LAST', now.toISOString()); // 看門狗：轉發器仍在運作
+  if (!text) return { status: 'skip' };
+  const ib = ensureSheet_(INBOX, INBOX_HEAD);
+  const id = 'ib_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, text, Utilities.Charset.UTF_8)).slice(0, 20);
+  if (findRow_(ib, id)) return { status: 'dup' }; // 同一短訊重送
+  const tsNum = Number(b.ts), ts = tsNum > 1e9 ? new Date(tsNum < 1e11 ? tsNum * 1000 : tsNum) : now;
+  const p = parseSms_(text, ts);
+  if (!p) { ib.appendRow([id, ts, String(b.sender || ''), text, '', '', '', '', '', 'skip', '', '']); return { status: 'skip' }; }
+  const hkd = p.cur === 'HKD' ? p.amt : round2_(p.amt * fxRate_(p.cur));
+  const key = merchKey_(p.merchant), generic = isGeneric_(key), rule = generic ? null : findRule_(key);
+  // 可能重複：不同短訊、同一港元金額、DUP_MINUTES 內（例如繳費短訊＋信用卡短訊）
+  const v = ib.getDataRange().getValues().slice(1);
+  const dupOf = v.find(r => r[0] !== id && r[9] !== 'skip' && Number(r[7]) === hkd && r[1] instanceof Date && Math.abs(r[1] - ts) < DUP_MINUTES * 60000);
+  const suggest = rule && rule.mode !== 'ignore'
+    ? { section: rule.section, item: rule.item, remark: rule.remark || p.merchant, rule: true }
+    : { section: '日常', item: MEAL, remark: generic ? '' : p.merchant, generic: generic };
+  if (dupOf) suggest.dup = `可能與 ${fmt_(dupOf[1], 'HH:mm')} 的「${dupOf[4]}」${money_('HKD', hkd)} 重複`;
+  let status = 'pending', recId = '';
+  const what = `${p.merchant} ${money_(p.cur, p.amt)}${p.cur !== 'HKD' ? `（≈ ${money_('HKD', hkd)}）` : ''}`;
+  if (rule && rule.mode === 'ignore') status = 'ignored';
+  else if (rule && rule.mode === 'auto' && !dupOf) {
+    const item = rule.item === MEAL ? mealOf_(ts) : rule.item;
+    recId = addRecord_({ id: id, date: p.date, section: rule.section, item: item, remark: rule.remark || p.merchant, currency: p.cur, origAmount: p.amt, amount: hkd });
+    status = 'auto';
+    const sh = sheet_(MERCH); sh.getRange(rule.row, 6).setValue(Number(sh.getRange(rule.row, 6).getValue() || 0) + 1);
+    notify_(`✅ 已入帳｜${item} ${rule.remark || p.merchant} ${money_('HKD', hkd)}｜${fmt_(ts, 'M/d HH:mm')}`);
+  } else {
+    notify_(`🔔 待確認｜${what}｜${fmt_(ts, 'M/d HH:mm')}${rule ? '' : generic ? '' : '（新商戶）'}${dupOf ? '（可能重複）' : ''}`);
+  }
+  ib.appendRow([id, ts, p.source, text, p.merchant, p.cur, p.amt, hkd, p.date, status, recId, JSON.stringify(suggest)]);
+  return { status: status };
 }
 
 function findRow_(sh, id) {

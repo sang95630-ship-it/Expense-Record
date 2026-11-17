@@ -55,6 +55,7 @@
 | + | 趨勢（Analysis 頁底）：近 6／12 個月按類別堆疊柱狀圖（由下而上 固定／日常／其他／旅遊），虛線為已完結月份平均，本月半透明，點柱跳到該月，附數據表；統計加「對比去年同月」；`summary` 一次取 24 個月，快取於 `S.summary`，寫入後失效 | ✅ |
 | + | 搜尋頁（sidebar 🔍）：備註／項目／類別關鍵字，近 3／12 個月／全部；顯示筆數、合計、平均每次、最近一次，按月分組，可直接修改；包括未同步紀錄 | ✅ |
 | + | 圖表色盤：dataviz 參考色盤（已驗證色盲及對比），`PAL_L`／`PAL_D`；類別色固定跟隨類別（`secColor`），不跟排名 | ✅ |
+| + | 通知自動記帳（第 5 期）：Tasker 轉發銀行短訊（見 `TASKER.md`）→ `action=inbox`；`PARSERS` 支援中銀信用卡、中銀戶口自動轉賬、花旗、安信、中國移動繳費；外幣以 open.er-api.com 換算（`fxRate_`，快取 6 小時）；`Merchants` 規則 auto／ask／ignore，商戶名互相包含（≥6 字元）即配對（應付不同卡截短）；支付平台（`GENERIC`：Alipay／WeChat Pay／PayMe 等）必須逐筆確認、不建規則；項目 `@meal` 按交易時間判斷早（05–11）／午（11–16）／晚（17–23）餐，其餘零食；同 HKD 金額 15 分鐘內不同短訊標示可能重複且不自動入帳；Signal：✅ 已入帳／🔔 待確認；前端「📥 待確認」頁（badge＋新增支出頁頂 banner）及商戶規則管理 | ✅ |
 | + | PWA：`manifest.json` + `sw.js`（index.html 網絡優先、其他靜態檔快取優先、Google Fonts SWR；GAS／匯率 API 不快取）；圖示 `icon.svg`／`icon-192/512.png`／`icon-maskable-512.png`／`apple-touch-icon.png` | ✅ |
 
 ## Google Sheet 結構
@@ -63,15 +64,18 @@
 - `Fixed`: ID | Item | Amount | Remark | StartYm（純文字 yyyy-MM） | Active | UpdatedAt | History | Cycle（M／Y，舊表由 `ensureFixHead_()` 補標題）
 - `Items`: Section | Item | Emoji | Order（自訂快選項目）
 - `Settings`: Key | Value（例如 `budget.total`、`budget.日常`）
+- `Inbox`: ID（`ib_`+短訊 MD5，防重送）| ReceivedAt | Source | Raw | Merchant | Currency | OrigAmount | Amount | TxDate | Status（pending／auto／confirmed／dismissed／ignored／skip）| RecordID | Suggest(JSON)
+- `Merchants`: Merchant（大寫 key）| Section | Item（可為 `@meal`）| Remark | Mode（auto／ask／ignore）| Count | UpdatedAt
 - 指令碼屬性：`TOKEN`（必須）、`SIGNAL_UUID`／`SIGNAL_APIKEY`（可選）；系統自動寫入 `BUDGET_SENT`、`LAST_BACKUP`、`LAST_MONTHLY`、`LAST_WATCHDOG`、`WD_SENT`、`NOTIFY_QUEUE`、`INBOX_LAST`（第 5 期）
 
 ## API（Code.gs）
 - GET `action=info` → `{sheetUrl, version, lastBackup, serverTime, signal, lastWatchdog, notifyQueue}`
 - GET `action=items` → `{items:{section:[[name, emoji], …]}}`
+- GET `action=inbox` → 待確認列表；`action=merchants` → 規則
 - GET `action=settings` → `{settings}`；`action=summary&from&to` → `{months:{ym:{類別:金額, _n}}}`；`action=search&q&from` → `{rows（最近 300 筆）, count, total}`
 - GET `action=list&month=yyyy-MM` → `{rows}`
 - GET `action=fixed` → `{rows}`
-- POST `add`（固定項目可帶 `cycle`）/ `updateRecord` / `deleteRecord` / `updateFixed`（可帶 `cycle`）/ `toggleFixed` / `saveItems`（`items` 為空即還原預設）/ `saveSettings`（值為空即刪除該鍵）
+- POST `add`（固定項目可帶 `cycle`）/ `updateRecord` / `deleteRecord` / `updateFixed`（可帶 `cycle`）/ `toggleFixed` / `saveItems`（`items` 為空即還原預設）/ `saveSettings`（值為空即刪除該鍵）/ `inbox`（Tasker，亦接受 form-urlencoded）/ `confirmInbox`（remember：auto／ask／空）/ `dismissInbox`（remember：ignore）/ `saveRule` / `deleteRule`
 - 手動函數：`setup`、`weeklyBackup`、`testSignal`
 - 所有請求需 `token`；寫入使用 `LockService`
 
@@ -94,7 +98,7 @@
 - ✅ 第 1 期：#1 TOKEN 改存指令碼屬性、#3 每週備份、#5 同步健康狀態
 - ✅ 第 2 期：#2 修改單筆紀錄、#8 固定項目「月／年」週期、#7 自訂項目（`Items` 表）＋看門狗
 - ✅ 第 3 期：#11 6–12 個月趨勢、#13 跨月搜尋、#14 月底預測、#10 每月預算
-- 第 4 期：#12 旅程標籤、#9 主畫面長按捷徑（manifest shortcuts）
-- 第 5 期：通知自動記帳——Android 轉發器（**Tasker** 一次性付費；後備 Automate 免費版。MacroDroid 免費版現需每 2–3 日看廣告才維持巨集運作，不採用）把付款通知原文 POST 至 `action=inbox`；Code.gs 按銀行格式解析；`Merchants` 表記住「通知商戶 → 類別／項目／備註」，項目可設「餐（按時間）」按時段判斷早／午／晚餐；首次出現的商戶列入「待確認」；同金額 2 分鐘內視為重複；入帳後經 **CallMeBot Signal API** 通知（用家已在另一專案「St 美股分析」使用，見下）
+- 第 4 期：#12 旅程標籤、#9 主畫面長按捷徑（manifest shortcuts）（尚未執行）
+- ✅ 第 5 期（先於第 4 期執行）：通知自動記帳——Android 轉發器（**Tasker** 一次性付費；後備 Automate 免費版。MacroDroid 免費版現需每 2–3 日看廣告才維持巨集運作，不採用）把付款通知原文 POST 至 `action=inbox`；Code.gs 按銀行格式解析；`Merchants` 表記住「通知商戶 → 類別／項目／備註」，項目可設「餐（按時間）」按時段判斷早／午／晚餐；首次出現的商戶列入「待確認」；同金額 2 分鐘內視為重複；入帳後經 **CallMeBot Signal API** 通知（用家已在另一專案「St 美股分析」使用，見下）
   - Signal 通知要點（沿用 St 專案經驗）：endpoint `https://signal.callmebot.com/signal/send.php?phone=<UUID>&apikey=<KEY>&text=…`；`phone` 必須是 Bot 回覆網址中 36 字元 UUID；UUID／apikey 存於本專案指令碼屬性 `SIGNAL_UUID`／`SIGNAL_APIKEY`（不入 repo）；`UrlFetchApp` 網址上限 2KB（中文約 200 字／條，入帳通知很短不需分段）；CallMeBot 出錯亦回 HTTP 200，成功須同時符合回覆含 `sent`／`queued`／`Apikey Correct` 且不含 `error`／`invalid`；免費第三方服務，訊息內容經其伺服器
 - 未選：#4 信用卡手續費、#6 儲存後日期回到今天、#15 匯出 CSV
