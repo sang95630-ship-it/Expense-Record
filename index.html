@@ -172,6 +172,22 @@ details.fold>summary h2{margin:0;flex:1}
 details.fold>summary .chev{color:var(--muted);font-size:13px;transition:transform .2s}
 details.fold[open]>summary .chev{transform:rotate(90deg)}
 details.fold>summary .cnt{font-size:12px;color:var(--muted)}
+/* 支出明細：按週分組（星期日開始），每週一張可摺疊卡 */
+details.wk{background:var(--surface);border-radius:18px;padding:0 16px;margin-bottom:10px}
+details.wk>summary{list-style:none;cursor:pointer;color:var(--ink);font-size:inherit;margin:0;padding:12px 0 10px;-webkit-user-select:none;user-select:none}
+details.wk>summary::-webkit-details-marker{display:none}
+.wk-top{display:flex;align-items:center;gap:8px}
+.wk-top .chev{color:var(--muted);font-size:12px;width:12px;transition:transform .2s}
+details.wk[open] .wk-top .chev{transform:rotate(90deg)}
+.wk-top b{font-size:15px;font-variant-numeric:tabular-nums}
+.wk-top .cnt{font-size:12px;color:var(--muted)}
+.wk-top .tot{margin-left:auto;font-weight:700;font-variant-numeric:tabular-nums}
+.wk-now{font-size:11px;padding:1px 8px;border-radius:999px;background:var(--soft);color:var(--ink)}
+.wk-bar{display:block;height:5px;border-radius:3px;background:var(--soft);overflow:hidden;margin:8px 0 0 20px}
+.wk-bar i{display:block;height:100%;background:var(--primary);border-radius:3px}
+details.wk .day-head{display:flex;justify-content:space-between;padding:10px 0 2px;border-top:1px solid var(--line)}
+details.wk .day-head:first-of-type{border-top:0}
+details.wk .rec:last-child{border-bottom:0}
 .ib-badge{margin-left:auto;background:var(--danger);color:#fff;border-radius:999px;font-size:11px;padding:1px 7px;font-weight:700}
 .ib-banner{display:flex;width:100%;align-items:center;gap:8px;border:0;border-radius:12px;padding:10px 14px;margin:0 0 12px;background:var(--warn-bg);color:var(--warn-ink);font-weight:500;text-align:left}
 .ib-banner span:last-child{margin-left:auto}
@@ -862,8 +878,8 @@ async function renderRecent(){
     box.innerHTML = (q.length ? q.map(r => recRow(r, false)).join('') : '') + `<p class="muted small">${esc(errMsg(e))}</p>`;
   }
 }
-function recRow(r, withDel){
-  const sub = `${r.date.slice(5).replace('-','/')}，${r.section}${r.remark ? '，'+esc(r.remark) : ''}${r.pending ? '，待同步' : ''}`;
+function recRow(r, withDel, noDate){
+  const sub = `${noDate ? '' : r.date.slice(5).replace('-','/') + '，'}${r.section}${r.remark ? '，'+esc(r.remark) : ''}${r.pending ? '，待同步' : ''}`;
   return `<div class="rec"><span class="em">${iconOf(r.section,r.item)}</span>
     <div class="main"><div>${esc(r.item)}</div><div class="sub">${sub}</div></div>
     <span class="amt">${amtHtml(r)}</span>
@@ -945,19 +961,49 @@ async function renderExpense(){
         <button class="ghost" data-fx="${esc(f.id)}">修改</button></div>`;
     }).join('') : '<p class="muted small">未有固定項目。在「新增支出」選擇「固定」即可加入。</p>') + '</div></details>';
 
-    const sorted = [...rows].sort((a,b) => b.date.localeCompare(a.date) || String(b.createdAt).localeCompare(String(a.createdAt)));
-    let lastDay = '', list = '';
-    sorted.forEach(r => { if (r.date !== lastDay){ lastDay = r.date; list += `<div class="day-head">${dateLabel(r.date)}</div>`; } list += recRow(r, true); });
-    html += `<h2>支出明細</h2><div class="card list">${list || '<p class="muted small">此月份沒有支出紀錄。</p>'}</div>`;
+    html += `<h2>支出明細</h2>${weekGroups(rows, total) || '<div class="card"><p class="muted small">此月份沒有支出紀錄。</p></div>'}`;
     box.innerHTML = html;
   } catch(e){ box.innerHTML = `<p class="muted">${esc(errMsg(e))}</p>`; }
 }
-$('#expBody').addEventListener('toggle', e => { if (e.target.id === 'fxFold') lsSet('fxFold', e.target.open ? '1' : '0'); }, true);
+$('#expBody').addEventListener('toggle', e => {
+  if (e.target.id === 'fxFold') lsSet('fxFold', e.target.open ? '1' : '0');
+  if (e.target.dataset?.wk) S.wkOpen[e.target.dataset.wk] = e.target.open;
+}, true);
 $('#expBody').addEventListener('click', e => {
   const ed = e.target.closest('[data-edit]'), fx = e.target.closest('[data-fx]');
   if (ed) openRec(ed.dataset.edit);
   if (fx) openFixed(fx.dataset.fx);
 });
+
+/* ---------- 支出明細：按週分組（星期日開始；跨月的週只計本月日子） ---------- */
+S.wkOpen = {}; // 本次使用期間手動展開／收起的週（key = 月份|週首日）
+function weekGroups(rows, monthTotal){
+  if (!rows.length) return '';
+  const [y, m] = S.expYm.split('-').map(Number), dim = daysIn(y, m), today = todayStr();
+  const weeks = {};
+  rows.forEach(r => {
+    const d = Number(r.date.slice(8,10)), dow = new Date(y, m-1, d).getDay();
+    const sun = d - dow, start = Math.max(1, sun); // 該週星期日（可能在上個月，則由 1 號起計）
+    const w = weeks[start] = weeks[start] || { start, end: Math.min(dim, sun + 6), rows: [] };
+    w.rows.push(r);
+  });
+  return Object.values(weeks).sort((a,b) => b.start - a.start).map(w => {
+    const key = `${S.expYm}|${w.start}`, tot = sum(w.rows);
+    const isNow = today.slice(0,7) === S.expYm && Number(today.slice(8,10)) >= w.start && Number(today.slice(8,10)) <= w.end;
+    const open = key in S.wkOpen ? S.wkOpen[key] : isNow;
+    const label = w.start === w.end ? `${w.start}/${m}` : `${w.start} - ${w.end}/${m}`;
+    const days = {}; w.rows.forEach(r => (days[r.date] = days[r.date] || []).push(r));
+    const body = Object.keys(days).sort().reverse().map(dt => {
+      const list = days[dt].sort((a,b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+      const d = new Date(y, m-1, Number(dt.slice(8,10)));
+      return `<div class="day-head"><span>${m}月${d.getDate()}日（週${'日一二三四五六'[d.getDay()]}）</span><span class="num">${money(round2(sum(list)))}</span></div>` + list.map(r => recRow(r, true, true)).join('');
+    }).join('');
+    return `<details class="wk" data-wk="${key}"${open ? ' open' : ''}><summary>
+      <div class="wk-top"><span class="chev">▶</span><b>${label}</b>${isNow ? '<span class="wk-now">本週</span>' : ''}<span class="cnt">${w.rows.length} 筆</span><span class="tot">${money(round2(tot))}</span></div>
+      <span class="wk-bar"><i style="width:${monthTotal ? Math.max(2, tot / monthTotal * 100) : 0}%"></i></span></summary>
+      <div class="list" style="padding:0">${body}</div></details>`;
+  }).join('');
+}
 
 /* ---------- 預算及月底預測 ---------- */
 function budgets(){ const o = {}; ['total', ...ORDER].forEach(k => { const v = Number(S.settings['budget.'+k]); if (v > 0) o[k] = v; }); return o; }
