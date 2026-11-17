@@ -175,7 +175,9 @@ h2{font-size:16px;margin:28px 0 10px}
 .tbl td,.tbl th{padding:4px 6px;border-bottom:1px solid var(--line);text-align:right} .tbl td:first-child,.tbl th:first-child{text-align:left}
 details summary{cursor:pointer;color:var(--muted);font-size:13px;margin-top:10px}
 /* 固定項目摺疊（狀態記於 localStorage fxFold） */
-details.fold>summary{list-style:none;display:flex;align-items:center;gap:8px;margin:28px 0 10px;color:var(--ink);font-size:inherit;-webkit-user-select:none;user-select:none}
+details.fold{margin:28px 0 10px} /* 間距放在容器上：動畫加 overflow:hidden 時不會因外邊距不再重疊而跳動 */
+details.fold>.card{margin-top:10px}
+details.fold>summary{list-style:none;display:flex;align-items:center;gap:8px;margin:0;color:var(--ink);font-size:inherit;-webkit-user-select:none;user-select:none}
 details.fold>summary::-webkit-details-marker{display:none}
 details.fold>summary h2{margin:0;flex:1}
 /* 摺疊按鈕：右側圓形 ⌄，展開時旋轉 180° 成 ⌃（觸控範圍 26px） */
@@ -783,7 +785,9 @@ document.addEventListener('click', e => {
     end = s.offsetHeight + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
     d._fade = body?.animate({ opacity:[1, 0] }, { duration:150, easing:'linear', fill:'forwards' });
   }
-  const a = d._anim = d.animate({ height:[start + 'px', end + 'px'] }, opening ? FOLD_OPEN : FOLD_CLOSE);
+  // 時間按距離調整：短距離約 0.26 秒，長清單（例如 9 項固定項目約 580px）最多 0.45 秒，速度感一致
+  const base = opening ? FOLD_OPEN : FOLD_CLOSE, dist = Math.abs(end - start);
+  const a = d._anim = d.animate({ height:[start + 'px', end + 'px'] }, { ...base, duration:Math.round(Math.min(450, Math.max(base.duration - 40, 200 + dist * 0.25))) });
   a.onfinish = () => {
     if (!opening){ d.open = false; d.classList.remove('closing'); d._fade?.cancel(); }
     d.style.height = d.style.overflow = ''; d._anim = d._fade = null;
