@@ -179,7 +179,8 @@ details.fold>summary{list-style:none;display:flex;align-items:center;gap:8px;mar
 details.fold>summary::-webkit-details-marker{display:none}
 details.fold>summary h2{margin:0;flex:1}
 /* 摺疊按鈕：右側圓形 ⌄，展開時旋轉 180° 成 ⌃（觸控範圍 26px） */
-.fold-btn{width:26px;height:26px;border-radius:50%;background:var(--surface-2);color:var(--ink);display:grid;place-items:center;flex-shrink:0;transition:transform .2s}
+.fold-btn{width:26px;height:26px;border-radius:50%;background:var(--surface-2);color:var(--ink);display:grid;place-items:center;flex-shrink:0;transition:transform .3s cubic-bezier(.2,0,0,1)}
+details.closing>summary .fold-btn{transition-duration:.24s;transition-timing-function:cubic-bezier(.3,0,.8,.15)}
 .fold-btn svg{display:block}
 details[open]>summary .fold-btn{transform:rotate(180deg)}
 details.closing>summary .fold-btn{transform:none} /* 收起動畫期間箭嘴先轉回 */
@@ -758,29 +759,34 @@ addEventListener('touchend', () => {
 });
 addEventListener('touchcancel', () => { if (sw?.active){ sidebar.style.transition = sidebar.style.transform = $('#scrim').style.transition = $('#scrim').style.opacity = ''; } sw = null; });
 
-/* ---------- 摺疊動畫：展開／收起時高度平滑過渡，內容淡入 ---------- */
+/* ---------- 摺疊動畫：高度＋內容淡入淡出，與箭嘴同一節奏 ----------
+   展開：先固定高度再打開，以 scrollHeight 一次量度（避免兩次強制排版）
+   曲線：展開用減速曲線 300ms，收起用加速曲線 240ms（Material emphasized） */
+const FOLD_OPEN = { duration:300, easing:'cubic-bezier(.2,0,0,1)' };
+const FOLD_CLOSE = { duration:240, easing:'cubic-bezier(.3,0,.8,.15)' };
 document.addEventListener('click', e => {
   const s = e.target.closest('details.wk>summary, details.fold>summary'); if (!s) return;
-  const d = s.parentElement; e.preventDefault();
+  const d = s.parentElement, body = d.querySelector(':scope>:not(summary)'); e.preventDefault();
   if (matchMedia('(prefers-reduced-motion: reduce)').matches){ d.open = !d.open; return; }
   const opening = !d.open || d.classList.contains('closing');
-  const start = d.offsetHeight;
-  if (d._anim){ d._anim.cancel(); d._anim = null; }
+  const start = d.getBoundingClientRect().height;
+  d._anim?.cancel(); d._fade?.cancel();
   d.style.overflow = 'hidden'; d.style.height = start + 'px';
   let end;
   if (opening){
-    d.classList.remove('closing'); d.open = true; d.style.height = 'auto';
-    end = d.offsetHeight; d.style.height = start + 'px';
-    d.querySelector(':scope>:not(summary)')?.animate({ opacity:[0, 1], transform:['translateY(-4px)', 'none'] }, { duration:260, easing:'ease-out' });
+    d.classList.remove('closing'); d.open = true;
+    end = d.scrollHeight; // 高度已固定，量度一次即可
+    d._fade = body?.animate({ opacity:[0, 1], transform:['translateY(-6px)', 'none'] }, { duration:260, delay:40, easing:'cubic-bezier(.2,0,0,1)', fill:'backwards' });
   } else {
     d.classList.add('closing');
     const cs = getComputedStyle(d);
     end = s.offsetHeight + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+    d._fade = body?.animate({ opacity:[1, 0] }, { duration:150, easing:'linear', fill:'forwards' });
   }
-  const a = d._anim = d.animate({ height:[start + 'px', end + 'px'] }, { duration:Math.min(380, 160 + Math.abs(end - start) * 0.25), easing:'cubic-bezier(.2,.7,.3,1)' });
+  const a = d._anim = d.animate({ height:[start + 'px', end + 'px'] }, opening ? FOLD_OPEN : FOLD_CLOSE);
   a.onfinish = () => {
-    if (!opening){ d.open = false; d.classList.remove('closing'); }
-    d.style.height = d.style.overflow = ''; d._anim = null;
+    if (!opening){ d.open = false; d.classList.remove('closing'); d._fade?.cancel(); }
+    d.style.height = d.style.overflow = ''; d._anim = d._fade = null;
   };
 });
 $('#scrim').addEventListener('click', closeDrawer);
