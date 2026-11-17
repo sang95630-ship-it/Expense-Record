@@ -1,10 +1,10 @@
 /**** 記帳簿 後端：貼到 Google Sheet → 擴充功能 → Apps Script ****/
 // TOKEN 不再寫在程式碼內：請到「專案設定 → 指令碼屬性」新增屬性 TOKEN（值 = 你的密碼）。
 // 之後更新 Code.gs 可直接整份貼上；更換 TOKEN 只需改屬性值，毋須重新部署。
-const API_VERSION = 4;            // 前端用來檢查 Code.gs 是否已更新
+const API_VERSION = 5;            // 前端用來檢查 Code.gs 是否已更新
 const BACKUP_FOLDER = '記帳簿備份'; // Google Drive 備份資料夾名稱
 const BACKUP_KEEP = 8;            // 保留最近 8 份（約 2 個月）
-const REC = 'Records', FIX = 'Fixed', ITEMS = 'Items';
+const REC = 'Records', FIX = 'Fixed', ITEMS = 'Items', SETTINGS = 'Settings';
 const WD_IDLE_DAYS = 3;           // 看門狗：連續 N 日沒有新增紀錄便提醒
 const WD_INBOX_DAYS = 3;          // 看門狗：通知轉發器 N 日沒有回報便提醒（第 5 期啟用）
 // Amount 一律為港幣；外幣支出另記 Currency / FxRate（1 外幣 = ? HKD）/ OrigAmount（原幣金額）
@@ -13,6 +13,8 @@ const REC_HEAD = ['ID', 'Date', 'Section', 'Item', 'Amount', 'Remark', 'CreatedA
 const FIX_HEAD = ['ID', 'Item', 'Amount', 'Remark', 'StartYm', 'Active', 'UpdatedAt', 'History', 'Cycle'];
 // 自訂快選項目；某 Section 沒有任何列時，前端使用內建預設
 const ITEMS_HEAD = ['Section', 'Item', 'Emoji', 'Order'];
+// 鍵值設定，例如 budget.total／budget.日常（每月預算，HKD）
+const SETTINGS_HEAD = ['Key', 'Value'];
 
 function tz_() { return SpreadsheetApp.getActive().getSpreadsheetTimeZone(); }
 function fmt_(d, p) { return Utilities.formatDate(d, tz_(), p); }
@@ -33,6 +35,11 @@ function token_() {
   if (!t || t.length < 16) throw new Error('伺服器未設定 TOKEN（指令碼屬性，至少 16 個字元）');
   return t;
 }
+function settings_() {
+  const sh = sheet_(SETTINGS), o = {};
+  if (sh) sh.getDataRange().getValues().slice(1).forEach(r => { if (r[0]) o[r[0]] = r[1]; });
+  return o;
+}
 function sheet_(n) { return SpreadsheetApp.getActive().getSheetByName(n); }
 function rows_(n) { return sheet_(n).getDataRange().getValues().slice(1); }
 function isOn_(v) { return v === true || String(v).toUpperCase() === 'TRUE'; }
@@ -40,7 +47,7 @@ function isOn_(v) { return v === true || String(v).toUpperCase() === 'TRUE'; }
 /** 首次執行一次：建立工作表 + 每月 1 號凌晨 1 時的 trigger */
 function setup() {
   const ss = SpreadsheetApp.getActive();
-  [[REC, REC_HEAD], [FIX, FIX_HEAD], [ITEMS, ITEMS_HEAD]].forEach(([n, h]) => {
+  [[REC, REC_HEAD], [FIX, FIX_HEAD], [ITEMS, ITEMS_HEAD], [SETTINGS, SETTINGS_HEAD]].forEach(([n, h]) => {
     const sh = ss.getSheetByName(n) || ss.insertSheet(n);
     if (sh.getLastRow() === 0) { sh.appendRow(h); sh.setFrozenRows(1); }
   });
@@ -91,6 +98,29 @@ function monthlyJob() {
   }
   props_().setProperty('LAST_MONTHLY', ym);
   return add.length;
+}
+
+/** 預算提醒：每個（類別, 月份, 門檻）只發一次 */
+function budgetCheck_(ym) {
+  const st = settings_(), budgets = Object.keys(st).filter(k => /^budget\./.test(k) && Number(st[k]) > 0);
+  if (!budgets.length) return;
+  const spent = { total: 0 };
+  rows_(REC).forEach(r => { if (r[0] && ym_(r[1]) === ym) { spent[r[2]] = (spent[r[2]] || 0) + Number(r[4]); spent.total += Number(r[4]); } });
+  const p = props_(), done = JSON.parse(p.getProperty('BUDGET_SENT') || '{}');
+  Object.keys(done).forEach(k => { if (k.indexOf(ym) < 0) delete done[k]; }); // 只保留本月
+  budgets.forEach(k => {
+    const sec = k.slice(7), b = Number(st[k]), used = spent[sec] || 0, pct = used / b;
+    [1, 0.8].some(th => {
+      if (pct < th) return false;
+      const key = `${sec}|${ym}|${th}`;
+      if (!done[key]) {
+        done[key] = 1; if (th === 1) done[`${sec}|${ym}|0.8`] = 1;
+        notify_(`${th === 1 ? '⛔' : '⚠️'} 記帳簿：${sec === 'total' ? '總支出' : sec}本月已用 HK$ ${Math.round(used).toLocaleString('en-US')}／預算 HK$ ${b.toLocaleString('en-US')}（${Math.round(pct * 100)}%）`);
+      }
+      return true;
+    });
+  });
+  p.setProperty('BUDGET_SENT', JSON.stringify(done));
 }
 
 /* ---------- Signal 通知（CallMeBot）---------- */
@@ -149,6 +179,8 @@ function watchdog() {
   // 4. 通知轉發器（第 5 期）：曾經回報過，但 N 日沒有再回報
   const inbox = p.getProperty('INBOX_LAST');
   if (inbox && now - new Date(inbox) > WD_INBOX_DAYS * 864e5) alert('inbox', `手機通知轉發器已 ${WD_INBOX_DAYS} 日沒有回報，請檢查 Tasker 是否被系統關閉`);
+  // 5. 預算：09:00–22:00 檢查，本月用量達 80%／100% 各提醒一次
+  if (hour >= 9 && hour <= 22) budgetCheck_(ym);
   flushNotify_();
   p.setProperty('WD_SENT', JSON.stringify(sent));
   p.setProperty('LAST_WATCHDOG', now.toISOString());
@@ -163,6 +195,24 @@ function doGet(e) {
       notifyQueue: JSON.parse(props_().getProperty('NOTIFY_QUEUE') || '[]').length };
     if (p.action === 'list') return { rows: rows_(REC).filter(r => r[0] && ym_(r[1]) === p.month).map(recObj_) };
     if (p.action === 'fixed') return { rows: rows_(FIX).filter(r => r[0]).map(fixObj_) };
+    if (p.action === 'settings') return { settings: settings_() };
+    if (p.action === 'summary') {
+      // 區間彙總：{ 'yyyy-MM': { 類別: 金額, _n: 筆數 } }
+      const months = {};
+      rows_(REC).forEach(r => {
+        if (!r[0]) return; const ym = ym_(r[1]); if (ym < p.from || ym > p.to) return;
+        const o = months[ym] = months[ym] || { _n: 0 };
+        o[r[2]] = (o[r[2]] || 0) + Number(r[4]); o._n++;
+      });
+      return { months };
+    }
+    if (p.action === 'search') {
+      const q = String(p.q || '').trim().toLowerCase(), from = p.from || '0000-00';
+      if (!q) return { rows: [], count: 0, total: 0 };
+      const hit = rows_(REC).filter(r => r[0] && ym_(r[1]) >= from && [r[2], r[3], r[5]].some(x => String(x).toLowerCase().indexOf(q) >= 0))
+        .map(recObj_).sort((a, b) => b.date.localeCompare(a.date));
+      return { rows: hit.slice(0, 300), count: hit.length, total: hit.reduce((a, r) => a + r.amount, 0) };
+    }
     if (p.action === 'items') {
       const sh = sheet_(ITEMS), items = {};
       if (sh) sh.getDataRange().getValues().slice(1).filter(r => r[0] && r[1])
@@ -223,6 +273,16 @@ function write_(b) {
       const all = keep.concat(add);
       if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, ITEMS_HEAD.length).clearContent();
       if (all.length) sh.getRange(2, 1, all.length, ITEMS_HEAD.length).setValues(all);
+      return {};
+    }
+    case 'saveSettings': {
+      let sh = sheet_(SETTINGS);
+      if (!sh) { sh = SpreadsheetApp.getActive().insertSheet(SETTINGS); sh.appendRow(SETTINGS_HEAD); sh.setFrozenRows(1); }
+      const cur = settings_();
+      Object.keys(b.settings || {}).forEach(k => { if (/^[\w.\u4e00-\u9fff]{1,40}$/.test(k)) cur[k] = b.settings[k]; });
+      const all = Object.keys(cur).filter(k => cur[k] !== '' && cur[k] != null).map(k => [k, cur[k]]);
+      if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 2).clearContent();
+      if (all.length) sh.getRange(2, 1, all.length, 2).setValues(all);
       return {};
     }
     case 'deleteRecord': {

@@ -50,6 +50,11 @@
 | + | 固定項目週期：每月／每年（`Fixed.Cycle` = M／Y；年繳於起始月份的同月 1 號入帳）；Expense 固定合計以年繳 ÷12 攤分 | ✅ |
 | + | 自訂快選項目：設定頁編輯（emoji、名稱、次序、新增／刪除、還原預設），存於 Sheet `Items`，本機快取 `itemsCfg`；未自訂的類別用 `DEFAULT_SECTIONS` | ✅ |
 | + | 看門狗 `watchdog()`（每小時）：固定支出未入帳自動補跑、備份逾 8 日、連續 3 日未記帳（21:00 檢查）、通知轉發器 3 日無回報（第 5 期）；經 CallMeBot Signal 通知，同類每日一則，失敗入 `NOTIFY_QUEUE` 補發；每月固定入帳發摘要 | ✅ |
+| + | 每月預算（設定頁；Sheet `Settings` 鍵 `budget.total`／`budget.<類別>`，本機快取 `settingsCfg`）：Expense 頁進度條（✓／⚠️ ≥80%／⛔ ≥100%）；看門狗 09:00–22:00 達 80%／100% 經 Signal 提醒，每（類別, 月, 門檻）一次（`BUDGET_SENT`） | ✅ |
+| + | 月底預測（Expense 頁本月，第 3 日起）：固定＋旅遊按實數，日常＋其他按日均外推至整月；與總預算比較 | ✅ |
+| + | 趨勢（Analysis 頁底）：近 6／12 個月按類別堆疊柱狀圖（由下而上 固定／日常／其他／旅遊），虛線為已完結月份平均，本月半透明，點柱跳到該月，附數據表；統計加「對比去年同月」；`summary` 一次取 24 個月，快取於 `S.summary`，寫入後失效 | ✅ |
+| + | 搜尋頁（sidebar 🔍）：備註／項目／類別關鍵字，近 3／12 個月／全部；顯示筆數、合計、平均每次、最近一次，按月分組，可直接修改；包括未同步紀錄 | ✅ |
+| + | 圖表色盤：dataviz 參考色盤（已驗證色盲及對比），`PAL_L`／`PAL_D`；類別色固定跟隨類別（`secColor`），不跟排名 | ✅ |
 | + | PWA：`manifest.json` + `sw.js`（index.html 網絡優先、其他靜態檔快取優先、Google Fonts SWR；GAS／匯率 API 不快取）；圖示 `icon.svg`／`icon-192/512.png`／`icon-maskable-512.png`／`apple-touch-icon.png` | ✅ |
 
 ## Google Sheet 結構
@@ -57,14 +62,16 @@
   - Amount 一律為 HKD（分析用）；外幣支出：OrigAmount 為原幣金額，FxRate 為「1 外幣 = ? HKD」；舊表由 `ensureRecHead_()` 自動補欄位標題
 - `Fixed`: ID | Item | Amount | Remark | StartYm（純文字 yyyy-MM） | Active | UpdatedAt | History | Cycle（M／Y，舊表由 `ensureFixHead_()` 補標題）
 - `Items`: Section | Item | Emoji | Order（自訂快選項目）
-- 指令碼屬性：`TOKEN`（必須）、`SIGNAL_UUID`／`SIGNAL_APIKEY`（可選）；系統自動寫入 `LAST_BACKUP`、`LAST_MONTHLY`、`LAST_WATCHDOG`、`WD_SENT`、`NOTIFY_QUEUE`、`INBOX_LAST`（第 5 期）
+- `Settings`: Key | Value（例如 `budget.total`、`budget.日常`）
+- 指令碼屬性：`TOKEN`（必須）、`SIGNAL_UUID`／`SIGNAL_APIKEY`（可選）；系統自動寫入 `BUDGET_SENT`、`LAST_BACKUP`、`LAST_MONTHLY`、`LAST_WATCHDOG`、`WD_SENT`、`NOTIFY_QUEUE`、`INBOX_LAST`（第 5 期）
 
 ## API（Code.gs）
 - GET `action=info` → `{sheetUrl, version, lastBackup, serverTime, signal, lastWatchdog, notifyQueue}`
 - GET `action=items` → `{items:{section:[[name, emoji], …]}}`
+- GET `action=settings` → `{settings}`；`action=summary&from&to` → `{months:{ym:{類別:金額, _n}}}`；`action=search&q&from` → `{rows（最近 300 筆）, count, total}`
 - GET `action=list&month=yyyy-MM` → `{rows}`
 - GET `action=fixed` → `{rows}`
-- POST `add`（固定項目可帶 `cycle`）/ `updateRecord` / `deleteRecord` / `updateFixed`（可帶 `cycle`）/ `toggleFixed` / `saveItems`（`items` 為空即還原預設）
+- POST `add`（固定項目可帶 `cycle`）/ `updateRecord` / `deleteRecord` / `updateFixed`（可帶 `cycle`）/ `toggleFixed` / `saveItems`（`items` 為空即還原預設）/ `saveSettings`（值為空即刪除該鍵）
 - 手動函數：`setup`、`weeklyBackup`、`testSignal`
 - 所有請求需 `token`；寫入使用 `LockService`
 
@@ -86,7 +93,7 @@
 ## 改進路線圖（已排定，按期執行）
 - ✅ 第 1 期：#1 TOKEN 改存指令碼屬性、#3 每週備份、#5 同步健康狀態
 - ✅ 第 2 期：#2 修改單筆紀錄、#8 固定項目「月／年」週期、#7 自訂項目（`Items` 表）＋看門狗
-- 第 3 期：#11 6–12 個月趨勢、#13 跨月搜尋、#14 月底預測、#10 每月預算（共用新的區間查詢 API）
+- ✅ 第 3 期：#11 6–12 個月趨勢、#13 跨月搜尋、#14 月底預測、#10 每月預算
 - 第 4 期：#12 旅程標籤、#9 主畫面長按捷徑（manifest shortcuts）
 - 第 5 期：通知自動記帳——Android 轉發器（**Tasker** 一次性付費；後備 Automate 免費版。MacroDroid 免費版現需每 2–3 日看廣告才維持巨集運作，不採用）把付款通知原文 POST 至 `action=inbox`；Code.gs 按銀行格式解析；`Merchants` 表記住「通知商戶 → 類別／項目／備註」，項目可設「餐（按時間）」按時段判斷早／午／晚餐；首次出現的商戶列入「待確認」；同金額 2 分鐘內視為重複；入帳後經 **CallMeBot Signal API** 通知（用家已在另一專案「St 美股分析」使用，見下）
   - Signal 通知要點（沿用 St 專案經驗）：endpoint `https://signal.callmebot.com/signal/send.php?phone=<UUID>&apikey=<KEY>&text=…`；`phone` 必須是 Bot 回覆網址中 36 字元 UUID；UUID／apikey 存於本專案指令碼屬性 `SIGNAL_UUID`／`SIGNAL_APIKEY`（不入 repo）；`UrlFetchApp` 網址上限 2KB（中文約 200 字／條，入帳通知很短不需分段）；CallMeBot 出錯亦回 HTTP 200，成功須同時符合回覆含 `sent`／`queued`／`Apikey Correct` 且不含 `error`／`invalid`；免費第三方服務，訊息內容經其伺服器
