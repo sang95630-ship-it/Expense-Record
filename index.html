@@ -202,6 +202,9 @@ h2{font-size:16px;margin:28px 0 10px}
 @keyframes undoCount{to{stroke-dashoffset:94.25}}
 .steps{padding-left:20px;margin:8px 0 0;color:var(--muted);font-size:14px}
 .steps li{margin:4px 0}
+.health{display:grid;grid-template-columns:auto 1fr;gap:8px 16px;font-size:14px}
+.health dt{color:var(--muted)} .health dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
+.health .bad{color:var(--danger)} .health .good{color:#5E9E6E}
 a{color:inherit}
 @media (prefers-reduced-motion: reduce){ *{transition:none!important;scroll-behavior:auto!important} }
 </style>
@@ -284,16 +287,19 @@ a{color:inherit}
         <label class="field">Apps Script Web App 連結
           <input class="text-in" id="cfgUrl" name="gas-url" type="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec">
         </label>
-        <label class="field">密碼（與 Code.gs 內 TOKEN 相同）
+        <label class="field">密碼（與 Apps Script「指令碼屬性」TOKEN 相同）
           <input class="text-in" id="cfgToken" name="gas-token" type="password" autocomplete="new-password">
         </label>
         <button class="primary" id="cfgSave" type="button">連結並測試</button>
         <p class="small muted" id="cfgStatus"></p>
       </form>
+      <h2>同步狀態</h2>
+      <div class="card health" id="healthBox"></div>
       <h2>首次設定步驟</h2>
       <ol class="steps">
-        <li>建立一個新的 Google Sheet，打開「擴充功能 → Apps Script」，貼上 Code.gs 並修改 TOKEN。</li>
-        <li>在 Apps Script 選擇函式 <b>setup</b> 並執行一次，按指示授權。</li>
+        <li>建立一個新的 Google Sheet，打開「擴充功能 → Apps Script」，貼上 Code.gs（毋須修改）。</li>
+        <li>「專案設定（⚙️）→ 指令碼屬性 → 新增屬性」：名稱 <b>TOKEN</b>，值為至少 16 個字元的隨機密碼。</li>
+        <li>在 Apps Script 選擇函式 <b>setup</b> 並執行一次，按指示授權（包括 Google Drive，用於每週備份）。</li>
         <li>「部署 → 新增部署作業 → 網頁應用程式」，執行身分選「我」，存取權選「所有人」。</li>
         <li>把產生的 /exec 連結和密碼填入上方，按「連結並測試」。連結會保存在此瀏覽器，重新整理後無需再設定。</li>
       </ol>
@@ -438,6 +444,19 @@ async function loadFixed(){ if (S.fixed) return S.fixed; const j = await get({ac
 const getQ = () => JSON.parse(localStorage.getItem('expenseQueue') || '[]');
 const setQ = q => { localStorage.setItem('expenseQueue', JSON.stringify(q)); updateSync(); };
 let flushing = false, inFlight = null, syncErr = '';
+const API_VERSION = 3; // 與 Code.gs 的 API_VERSION 對應
+// 同步健康狀態（只存本機）：okAt 最後成功同步時間；err／errAt 最近一次錯誤
+function noteHealth(ok, err){
+  const h = lsGet('syncHealth', {});
+  if (ok) h.okAt = new Date().toISOString(); else { h.err = String(err || '未知錯誤'); h.errAt = new Date().toISOString(); }
+  lsSet('syncHealth', h);
+}
+const relTime = iso => {
+  if (!iso) return '—';
+  const m = Math.round((Date.now() - Date.parse(iso)) / 60000);
+  if (m < 1) return '剛剛'; if (m < 60) return `${m} 分鐘前`; if (m < 24*60) return `${Math.round(m/60)} 小時前`;
+  const d = new Date(iso); return `${d.getMonth()+1}月${d.getDate()}日 ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
 const hold = {}; // 剛儲存的紀錄暫緩同步（id → 到期時間），以便「復原」
 function updateSync(){
   const n = getQ().length;
@@ -454,8 +473,8 @@ async function flushQ(){
     while ((r = getQ().find(x => !(hold[x.id] > Date.now())))){
       inFlight = r.id;
       try { await post({action:'add', ...r}); }
-      catch(e){ syncErr = e.message === 'unauthorized' ? '密碼錯誤' : e instanceof TypeError ? '離線' : e.message; break; }
-      setQ(getQ().filter(x => x.id !== r.id)); synced++;
+      catch(e){ syncErr = e.message === 'unauthorized' ? '密碼錯誤' : e instanceof TypeError ? '離線' : e.message; noteHealth(false, syncErr); break; }
+      setQ(getQ().filter(x => x.id !== r.id)); synced++; noteHealth(true);
       const ym = r.date.slice(0,7);
       if (S.cache[ym] && !S.cache[ym].some(x => x.id === r.id)) S.cache[ym].push({...r, createdAt:new Date().toISOString(), fixedId:r.section === '固定' ? 'pending' : ''});
       if (r.section === '固定') S.fixed = null;
@@ -479,11 +498,11 @@ async function manualSync(){
     S.cache = {}; S.fixed = null;
     if (n) toast(`${n} 筆未能同步（${syncErr || '請稍後再試'}）`);
     else {
-      await get({action:'info'});
-      toast('已同步，資料為最新');
+      const j = await get({action:'info'}); noteHealth(true);
+      toast(j.version >= API_VERSION ? '已同步，資料為最新' : '已同步，但 Code.gs 未更新至最新版本，請重新部署', j.version >= API_VERSION ? 2400 : 4500);
     }
     refresh();
-  } catch(e){ toast(errMsg(e)); }
+  } catch(e){ noteHealth(false, errMsg(e)); toast(errMsg(e)); }
   finally { btn.classList.remove('spin'); }
 }
 $('#syncBtn').addEventListener('click', manualSync);
@@ -868,6 +887,25 @@ function renderSettings(){
   $('#cfgStatus').innerHTML = cfg.sheetUrl
     ? `已連結。<a href="${esc(cfg.sheetUrl)}" target="_blank" rel="noopener">開啟 Google Sheet</a>${n ? `，${n} 筆支出待同步` : ''}`
     : '尚未連結。';
+  renderHealth();
+}
+async function renderHealth(){
+  const box = $('#healthBox'), h = lsGet('syncHealth', {}), n = getQ().length;
+  const row = (k, v, cls = '') => `<dt>${k}</dt><dd class="${cls}">${v}</dd>`;
+  const base = row('待同步', n ? `${n} 筆` : '0 筆', n ? 'bad' : 'good')
+    + row('最後成功同步', relTime(h.okAt))
+    + row('最近錯誤', h.err ? `${esc(h.err)}（${relTime(h.errAt)}）` : '沒有', h.err && (!h.okAt || h.errAt > h.okAt) ? 'bad' : '');
+  box.innerHTML = `<dl class="health" style="display:contents">${base}${row('伺服器版本', '檢查中…')}${row('最後備份', '檢查中…')}</dl>`;
+  if (!cfg.url){ box.innerHTML = `<dl class="health" style="display:contents">${base}</dl>`; return; }
+  try {
+    const j = await get({action:'info'});
+    const ver = j.version >= API_VERSION ? [`v${j.version} ✓`, 'good'] : [`v${j.version || 1}：請更新 Code.gs 並重新部署`, 'bad'];
+    const bkAge = j.lastBackup ? (Date.now() - Date.parse(j.lastBackup)) / 864e5 : null;
+    const bk = j.lastBackup ? [relTime(j.lastBackup), bkAge > 8 ? 'bad' : 'good'] : ['未有備份（請執行 setup 一次）', 'bad'];
+    box.innerHTML = `<dl class="health" style="display:contents">${base}${row('伺服器版本', ...ver)}${row('最後備份', ...bk)}</dl>`;
+  } catch(e){
+    box.innerHTML = `<dl class="health" style="display:contents">${base}${row('伺服器', esc(errMsg(e)), 'bad')}</dl>`;
+  }
 }
 $('#cfgSave').addEventListener('click', async () => {
   const url = $('#cfgUrl').value.trim(), token = $('#cfgToken').value.trim();

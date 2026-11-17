@@ -14,7 +14,8 @@
 ## 架構決定（已確認）
 - 選用「GAS Web App」而非「OAuth + Sheets API」：純前端 OAuth token 約 1 小時到期、無 refresh token，不符合「F5 後無需重新綁定」的需求
 - 綁定方式：Web App `/exec` URL + TOKEN 存於 `localStorage`（key: `expenseCfg`）
-- TOKEN 是自訂隨機字串（例如 `crypto.randomUUID().replace(/-/g,'')`），**不是** Google 密碼；**絕不能**硬寫進 index.html（repo 可能是 public）
+- TOKEN 是自訂隨機字串（例如 `crypto.randomUUID().replace(/-/g,'')`），**不是** Google 密碼；**絕不能**硬寫進 index.html 或 Code.gs（repo 可能是 public）
+- 伺服器端 TOKEN 存於 Apps Script「指令碼屬性」`TOKEN`（`token_()` 讀取，至少 16 字元）；更換 TOKEN 只需改屬性，毋須重新部署
 - POST 使用 `Content-Type: text/plain;charset=utf-8` 以避免 CORS preflight（GAS 不處理 OPTIONS）
 - GET 的 token 放在 query string（個人用途可接受）
 - Web App 部署：執行身分「我」，存取權「所有人」
@@ -43,6 +44,8 @@
 | + | 樂觀寫入：按「儲存」即寫入本機佇列並更新畫面（<0.1 秒），背景同步至 GAS；失敗保留佇列，於 online／回到前台／每 30 秒重試；未同步紀錄可直接刪除 | ✅ |
 | + | 選擇類別後，鍵盤彈出時自動向下捲，令「儲存支出」按鈕位於鍵盤上方（`visualViewport` resize + `keepSaveVisible()`；頁面太短時臨時加底部空白）；儲存後收起鍵盤並平滑捲回頂部；「已儲存」提示顯示項目＋金額（外幣附 ≈HK$，非今天附日期），顯示 3.2 秒；提示旁「復原」按鈕（↶ 圖示＋倒數圈，aria-label「復原」）：新紀錄於 `hold` 暫緩同步約 3.5 秒，復原即從佇列移除並把內容填回表格 | ✅ |
 | + | 標題列右上角「同步」按鈕：送出本機佇列 → 清快取 → 重新讀取 Sheet；同步中圖示旋轉 | ✅ |
+| + | 同步健康狀態（設定頁）：待同步筆數、最後成功同步（localStorage `syncHealth`）、最近錯誤、伺服器版本（`API_VERSION`，前後端須一致）、最後備份時間 | ✅ |
+| + | 每週備份 `weeklyBackup()`：每週日 03:00 把所有工作表複製成新試算表至 Drive「記帳簿備份」，保留 8 份；只含資料不含程式及 TOKEN | ✅ |
 | + | PWA：`manifest.json` + `sw.js`（index.html 網絡優先、其他靜態檔快取優先、Google Fonts SWR；GAS／匯率 API 不快取）；圖示 `icon.svg`／`icon-192/512.png`／`icon-maskable-512.png`／`apple-touch-icon.png` | ✅ |
 
 ## Google Sheet 結構
@@ -51,26 +54,31 @@
 - `Fixed`: ID | Item | Amount | Remark | StartYm（純文字 yyyy-MM） | Active | UpdatedAt | History
 
 ## API（Code.gs）
-- GET `action=info` → `{sheetUrl}`
+- GET `action=info` → `{sheetUrl, version, lastBackup, serverTime}`
 - GET `action=list&month=yyyy-MM` → `{rows}`
 - GET `action=fixed` → `{rows}`
 - POST `add` / `deleteRecord` / `updateFixed` / `toggleFixed`
 - 所有請求需 `token`；寫入使用 `LockService`
 
 ## 部署步驟
-1. 新 Google Sheet → 擴充功能 → Apps Script → 貼上 Code.gs，修改 TOKEN
-2. 專案設定時區 Asia/Hong_Kong；Sheet「檔案 → 設定」亦同
-3. 執行 `setup()` 一次（建表 + 每月 1 號 01:00 trigger）
+1. 新 Google Sheet → 擴充功能 → Apps Script → 貼上 Code.gs（毋須修改）
+2. 專案設定：時區 Asia/Hong_Kong；指令碼屬性新增 `TOKEN`；Sheet「檔案 → 設定」時區亦同
+3. 執行 `setup()` 一次（建表 + 每月 1 號 01:00 `monthlyJob` + 每週日 03:00 `weeklyBackup` trigger；需授權 Drive）
 4. 部署 → 網頁應用程式（我／所有人）→ 取得 `/exec` URL
 5. index.html 推上 GitHub repo → Settings → Pages
 6. 網頁「設定」頁貼上 URL + TOKEN
-- 注意：修改 Code.gs 後須「管理部署作業 → 編輯 → 新版本」才生效
+- 注意：修改 Code.gs 後須「管理部署作業 → 編輯 → 新版本」才生效；改了 `API_VERSION` 須同步改 index.html 內的 `API_VERSION`
+- TOKEN 外洩：改指令碼屬性 `TOKEN` → 網頁設定頁輸入新 TOKEN（手機轉發器亦要更新），毋須重新部署
 
 ## 已知限制
 - 修改圖示／manifest 等靜態檔後，須把 `sw.js` 的 `VERSION` 加 1，否則手機會繼續用舊快取（index.html 不受影響）
 - 固定項目只從輸入月份的「下個月」起自動新增，補登過往月份不會回補
 - GAS 每次讀寫約 1–3 秒延遲
 
-## 待決定／可能的下一步
-- 年繳項目（如保險年費）：是否在「固定」加入「週期：月／年」
-- TOKEN 外洩時的作廢流程（換 TOKEN + 重新部署）
+## 改進路線圖（已排定，按期執行）
+- ✅ 第 1 期：#1 TOKEN 改存指令碼屬性、#3 每週備份、#5 同步健康狀態
+- 第 2 期：#2 修改單筆紀錄、#8 固定項目「月／年」週期、#7 自訂項目（`Settings` 表）
+- 第 3 期：#11 6–12 個月趨勢、#13 跨月搜尋、#14 月底預測、#10 每月預算（共用新的區間查詢 API）
+- 第 4 期：#12 旅程標籤、#9 主畫面長按捷徑（manifest shortcuts）
+- 第 5 期：通知自動記帳——Android 轉發器（MacroDroid／Tasker）把付款通知原文 POST 至 `action=inbox`；Code.gs 按銀行格式解析；`Merchants` 表記住「通知商戶 → 類別／項目／備註」，項目可設「餐（按時間）」按時段判斷早／午／晚餐；首次出現的商戶列入「待確認」；同金額 2 分鐘內視為重複；可選入帳後經用家的 Signal bot 通知
+- 未選：#4 信用卡手續費、#6 儲存後日期回到今天、#15 匯出 CSV

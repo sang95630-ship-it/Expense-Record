@@ -1,5 +1,9 @@
 /**** 記帳簿 後端：貼到 Google Sheet → 擴充功能 → Apps Script ****/
-const TOKEN = 'change-me-to-a-long-random-string'; // 改成你自己的密碼，網頁設定頁要輸入同一個
+// TOKEN 不再寫在程式碼內：請到「專案設定 → 指令碼屬性」新增屬性 TOKEN（值 = 你的密碼）。
+// 之後更新 Code.gs 可直接整份貼上；更換 TOKEN 只需改屬性值，毋須重新部署。
+const API_VERSION = 3;            // 前端用來檢查 Code.gs 是否已更新
+const BACKUP_FOLDER = '記帳簿備份'; // Google Drive 備份資料夾名稱
+const BACKUP_KEEP = 8;            // 保留最近 8 份（約 2 個月）
 const REC = 'Records', FIX = 'Fixed';
 // Amount 一律為港幣；外幣支出另記 Currency / FxRate（1 外幣 = ? HKD）/ OrigAmount（原幣金額）
 const REC_HEAD = ['ID', 'Date', 'Section', 'Item', 'Amount', 'Remark', 'CreatedAt', 'FixedID', 'Currency', 'FxRate', 'OrigAmount'];
@@ -13,6 +17,12 @@ function ym_(v) { return v instanceof Date ? fmt_(v, 'yyyy-MM') : String(v).slic
 function ensureRecHead_() {
   const sh = sheet_(REC);
   if (sh.getLastColumn() < REC_HEAD.length) sh.getRange(1, 1, 1, REC_HEAD.length).setValues([REC_HEAD]);
+}
+function props_() { return PropertiesService.getScriptProperties(); }
+function token_() {
+  const t = props_().getProperty('TOKEN');
+  if (!t || t.length < 16) throw new Error('伺服器未設定 TOKEN（指令碼屬性，至少 16 個字元）');
+  return t;
 }
 function sheet_(n) { return SpreadsheetApp.getActive().getSheetByName(n); }
 function rows_(n) { return sheet_(n).getDataRange().getValues().slice(1); }
@@ -30,6 +40,29 @@ function setup() {
   sheet_(FIX).getRange('E:E').setNumberFormat('@'); // 防止 2026-11 被轉成日期
   ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
   ScriptApp.newTrigger('monthlyJob').timeBased().onMonthDay(1).atHour(1).create();
+  ScriptApp.newTrigger('weeklyBackup').timeBased().onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(3).create();
+  if (!props_().getProperty('TOKEN')) Logger.log('⚠️ 尚未設定 TOKEN：專案設定 → 指令碼屬性 → 新增 TOKEN');
+}
+
+/** 每週日凌晨 3 時：把所有工作表複製成新試算表，放入 Drive「記帳簿備份」資料夾，保留最近 8 份。可手動執行作即時備份。
+ *  只複製資料（不複製 Apps Script），備份檔不含 TOKEN。 */
+function weeklyBackup() {
+  const ss = SpreadsheetApp.getActive();
+  const it = DriveApp.getFoldersByName(BACKUP_FOLDER);
+  const folder = it.hasNext() ? it.next() : DriveApp.createFolder(BACKUP_FOLDER);
+  const bk = SpreadsheetApp.create('記帳簿備份 ' + fmt_(new Date(), 'yyyy-MM-dd HHmm'));
+  bk.setSpreadsheetTimeZone(tz_());
+  const blank = bk.getSheets()[0];
+  ss.getSheets().forEach(sh => sh.copyTo(bk).setName(sh.getName()));
+  bk.deleteSheet(blank);
+  DriveApp.getFileById(bk.getId()).moveTo(folder);
+  // 清理舊備份
+  const files = [];
+  const fi = folder.getFilesByType(MimeType.GOOGLE_SHEETS);
+  while (fi.hasNext()) files.push(fi.next());
+  files.sort((a, b) => b.getDateCreated() - a.getDateCreated()).slice(BACKUP_KEEP).forEach(f => f.setTrashed(true));
+  props_().setProperty('LAST_BACKUP', new Date().toISOString());
+  return bk.getUrl();
 }
 
 /** 每月 1 號：把所有「啟用中」固定項目寫入本月 */
@@ -46,7 +79,8 @@ function monthlyJob() {
 function doGet(e) {
   const p = e.parameter;
   return handle_(p, () => {
-    if (p.action === 'info') return { sheetUrl: SpreadsheetApp.getActive().getUrl() };
+    if (p.action === 'info') return { sheetUrl: SpreadsheetApp.getActive().getUrl(), version: API_VERSION,
+      lastBackup: props_().getProperty('LAST_BACKUP') || '', serverTime: new Date().toISOString() };
     if (p.action === 'list') return { rows: rows_(REC).filter(r => r[0] && ym_(r[1]) === p.month).map(recObj_) };
     if (p.action === 'fixed') return { rows: rows_(FIX).filter(r => r[0]).map(fixObj_) };
     throw new Error('unknown action');
@@ -115,7 +149,7 @@ function write_(b) {
 
 function handle_(p, fn) {
   try {
-    if (!p || p.token !== TOKEN) throw new Error('unauthorized');
+    if (!p || p.token !== token_()) throw new Error('unauthorized');
     return json_(Object.assign({ ok: true }, fn()));
   } catch (err) {
     return json_({ ok: false, error: err.message });
