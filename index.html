@@ -61,7 +61,7 @@ button{cursor:pointer}
 .nav-item .ni{width:24px;text-align:center;font-size:18px;flex-shrink:0}
 .nav-item .ext{margin-left:auto;font-size:12px;opacity:.6}
 .spacer{flex:1}
-.scrim{display:none;position:fixed;inset:0;background:rgba(16,22,26,.45);z-index:35}
+.scrim{display:none;position:fixed;inset:0;background:rgba(16,22,26,.45);z-index:35;opacity:0;transition:opacity .22s ease}
 main{flex:1;min-width:0;display:flex;flex-direction:column;padding-bottom:env(safe-area-inset-bottom,0px)}
 .topbar{display:flex;align-items:center;gap:8px;padding:calc(14px + env(safe-area-inset-top,0px)) 20px 6px;max-width:760px;width:100%;
   position:sticky;top:0;z-index:30;background:var(--bg)}
@@ -90,7 +90,8 @@ h2{font-size:16px;margin:28px 0 10px}
   .sidebar.open{transform:none}
   .sidebar.collapsed{width:248px}
   .sidebar.collapsed .label{display:inline}
-  .scrim.show{display:block}
+  .scrim{display:block;pointer-events:none}
+  .scrim.show{opacity:1;pointer-events:auto}
   .topbar{padding-left:12px}
 }
 @media (min-width:900px){ .mobile-only{display:none} }
@@ -181,6 +182,7 @@ details.fold>summary h2{margin:0;flex:1}
 .fold-btn{width:26px;height:26px;border-radius:50%;background:var(--surface-2);color:var(--ink);display:grid;place-items:center;flex-shrink:0;transition:transform .2s}
 .fold-btn svg{display:block}
 details[open]>summary .fold-btn{transform:rotate(180deg)}
+details.closing>summary .fold-btn{transform:none} /* 收起動畫期間箭嘴先轉回 */
 details.fold>summary .fold-btn{background:var(--surface)}
 details.fold>summary .cnt{font-size:12px;color:var(--muted)}
 /* 支出明細：按週分組（星期日開始），每週一張可摺疊卡 */
@@ -687,6 +689,7 @@ $('#syncBtn').addEventListener('click', manualSync);
 const sidebar = $('#sidebar');
 const isDesktop = () => matchMedia('(min-width:900px)').matches;
 function closeDrawer(){ sidebar.classList.remove('open'); $('#scrim').classList.remove('show'); }
+function openDrawer(){ sidebar.classList.add('open'); $('#scrim').classList.add('show'); }
 function go(p){
   if (p === 'details'){
     closeDrawer();
@@ -722,7 +725,64 @@ addEventListener('scroll', () => {
     tbTick = false;
   });
 }, { passive:true });
-$('#menuBtn').addEventListener('click', () => { sidebar.classList.add('open'); $('#scrim').classList.add('show'); });
+$('#menuBtn').addEventListener('click', openDrawer);
+
+/* ---------- 手勢：向右拉開側欄、向左收起（側欄跟隨手指，放手時按位置或速度決定） ---------- */
+let sw = null;
+addEventListener('touchstart', e => {
+  if (isDesktop() || e.touches.length !== 1 || document.querySelector('.overlay.show')) return;
+  if (e.target.closest('input,select,textarea,.wheel,.trend svg')) return; // 避免與輸入及橫向操作衝突
+  const t = e.touches[0];
+  sw = { x:t.clientX, y:t.clientY, open:sidebar.classList.contains('open'), active:false, pos:0, lx:t.clientX, lt:e.timeStamp, v:0 };
+}, { passive:true });
+addEventListener('touchmove', e => {
+  if (!sw) return;
+  const t = e.touches[0], dx = t.clientX - sw.x, dy = t.clientY - sw.y;
+  if (!sw.active){
+    if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) { sw = null; return; } // 垂直捲動
+    if (!((!sw.open && dx > 14) || (sw.open && dx < -14))) return;
+    sw.active = true; sidebar.style.transition = $('#scrim').style.transition = 'none';
+  }
+  const w = sidebar.offsetWidth;
+  sw.pos = Math.max(-w, Math.min(0, sw.open ? dx : dx - w));
+  sidebar.style.transform = `translateX(${sw.pos}px)`;
+  $('#scrim').style.opacity = 1 + sw.pos / w;
+  const dt = e.timeStamp - sw.lt; if (dt > 0){ sw.v = (t.clientX - sw.lx) / dt; sw.lx = t.clientX; sw.lt = e.timeStamp; }
+}, { passive:true });
+addEventListener('touchend', () => {
+  const s = sw; sw = null; if (!s || !s.active) return;
+  sidebar.style.transition = sidebar.style.transform = $('#scrim').style.transition = $('#scrim').style.opacity = '';
+  const w = sidebar.offsetWidth;
+  const open = Math.abs(s.v) > 0.5 ? s.v > 0 : s.pos > -w * 0.6; // 快速撥動看方向，否則拉出超過 40% 即打開
+  open ? openDrawer() : closeDrawer();
+});
+addEventListener('touchcancel', () => { if (sw?.active){ sidebar.style.transition = sidebar.style.transform = $('#scrim').style.transition = $('#scrim').style.opacity = ''; } sw = null; });
+
+/* ---------- 摺疊動畫：展開／收起時高度平滑過渡，內容淡入 ---------- */
+document.addEventListener('click', e => {
+  const s = e.target.closest('details.wk>summary, details.fold>summary'); if (!s) return;
+  const d = s.parentElement; e.preventDefault();
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches){ d.open = !d.open; return; }
+  const opening = !d.open || d.classList.contains('closing');
+  const start = d.offsetHeight;
+  if (d._anim){ d._anim.cancel(); d._anim = null; }
+  d.style.overflow = 'hidden'; d.style.height = start + 'px';
+  let end;
+  if (opening){
+    d.classList.remove('closing'); d.open = true; d.style.height = 'auto';
+    end = d.offsetHeight; d.style.height = start + 'px';
+    d.querySelector(':scope>:not(summary)')?.animate({ opacity:[0, 1], transform:['translateY(-4px)', 'none'] }, { duration:260, easing:'ease-out' });
+  } else {
+    d.classList.add('closing');
+    const cs = getComputedStyle(d);
+    end = s.offsetHeight + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+  }
+  const a = d._anim = d.animate({ height:[start + 'px', end + 'px'] }, { duration:Math.min(380, 160 + Math.abs(end - start) * 0.25), easing:'cubic-bezier(.2,.7,.3,1)' });
+  a.onfinish = () => {
+    if (!opening){ d.open = false; d.classList.remove('closing'); }
+    d.style.height = d.style.overflow = ''; d._anim = null;
+  };
+});
 $('#scrim').addEventListener('click', closeDrawer);
 $('#collapseBtn').addEventListener('click', () => {
   if (!isDesktop()) return closeDrawer();
