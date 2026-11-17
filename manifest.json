@@ -10,8 +10,73 @@
   "background_color": "#ECEFF1",
   "theme_color": "#37474F",
   "icons": [
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "記早餐",
+      "short_name": "記早餐",
+      "url": "./?s=日常&i=早餐",
+      "icons": [
+        {
+          "src": "sc-breakfast.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "記午餐",
+      "short_name": "記午餐",
+      "url": "./?s=日常&i=午餐",
+      "icons": [
+        {
+          "src": "sc-lunch.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "記晚餐",
+      "short_name": "記晚餐",
+      "url": "./?s=日常&i=晚餐",
+      "icons": [
+        {
+          "src": "sc-dinner.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "待確認",
+      "short_name": "待確認",
+      "url": "./?p=inbox",
+      "icons": [
+        {
+          "src": "sc-inbox.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
   ]
 }

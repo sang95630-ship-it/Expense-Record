@@ -179,6 +179,14 @@ details summary{cursor:pointer;color:var(--muted);font-size:13px;margin-top:10px
 .rule:last-child{border-bottom:0}
 .rule select{padding:6px 8px}
 .rule button{border:1px solid var(--line);background:none;border-radius:8px;height:34px;color:var(--danger)}
+.trip-row{display:flex;align-items:center;gap:8px;font-size:14px}
+.trip-row select{flex:1;padding:9px 12px}
+.trip-card{margin-bottom:12px}
+.trip-card .total{font-size:26px;margin:4px 0 2px}
+.trip-card .bar-row{grid-template-columns:72px 1fr auto}
+.trip-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.trip-head .ghost{padding:5px 10px}
+.trip-now{display:inline-block;font-size:11px;padding:1px 8px;border-radius:999px;background:var(--warn-bg);color:var(--warn-ink);margin-left:6px;vertical-align:2px}
 .sr-month{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);padding:12px 0 2px;font-weight:500}
 .bar{height:8px;background:var(--soft);border-radius:4px;overflow:hidden}
 .bar i{display:block;height:100%;background:var(--primary);border-radius:4px}
@@ -265,6 +273,7 @@ a{color:inherit}
     <button class="nav-item" data-page="details"><span class="ni">📑</span><span class="label">Details</span><span class="ext label">↗</span></button>
     <button class="nav-item" data-page="analysis"><span class="ni">📈</span><span class="label">Monthly Analysis</span></button>
     <div class="spacer"></div>
+    <button class="nav-item" data-page="trips"><span class="ni">🧳</span><span class="label">旅程</span></button>
     <button class="nav-item" data-page="inbox"><span class="ni">📥</span><span class="label">待確認</span><span class="ib-badge label" id="ibBadge" hidden></span></button>
     <button class="nav-item" data-page="search"><span class="ni">🔍</span><span class="label">搜尋</span></button>
     <button class="nav-item" data-page="settings"><span class="ni">⚙️</span><span class="label">設定</span></button>
@@ -301,6 +310,7 @@ a{color:inherit}
           <b id="fxHkd"></b><span class="small" id="fxSrc" style="flex-basis:100%"></span></div>
         <input class="text-in" id="remark" name="expense-remark" type="text" placeholder="備註（選填），例如店名或用途" autocomplete="off" data-lpignore="true" data-1p-ignore>
         <div class="rm-chips" id="remarkChips" hidden></div>
+        <label class="trip-row" id="tripRow" hidden>🧳<select class="text-in" id="tripSel" aria-label="旅程"></select></label>
         <div class="seg cy-seg" id="cycleSeg" hidden><button type="button" data-cy="M">每月</button><button type="button" data-cy="Y">每年</button></div>
         <p class="hint" id="fixedHint" hidden></p>
         <button class="primary" id="saveBtn">儲存支出</button>
@@ -335,6 +345,22 @@ a{color:inherit}
       <h2>商戶規則</h2>
       <div class="card" id="ruleBody"><p class="muted small">載入中…</p></div>
       <p class="hint small" style="margin:8px 4px">「自動」：之後同一商戶直接入帳並經 Signal 通知；「詢問」：每次預填，按確認即可；「略過」：不記帳（例如已由固定項目入帳的電話費）。支付平台（AlipayHK、WeChat Pay 等）無法得知真正商戶，必須逐筆確認。</p>
+    </section>
+
+    <!-- Trips -->
+    <section class="page" id="p-trips" hidden>
+      <div class="card" id="tripForm">
+        <strong id="tfTitle">新增旅程</strong>
+        <div class="re-grid" style="margin-top:10px">
+          <label class="field" style="grid-column:1/-1">名稱<input class="text-in" id="tfName" type="text" maxlength="20" placeholder="例如 2026-12 東京" autocomplete="off"></label>
+          <label class="field">出發<input class="text-in" id="tfStart" type="date"></label>
+          <label class="field">回程<input class="text-in" id="tfEnd" type="date"></label>
+          <label class="field" style="grid-column:1/-1">預設幣種<select class="text-in" id="tfCur"></select></label>
+        </div>
+        <div class="row-btns"><button class="ghost" id="tfCancel" type="button" hidden>取消</button><button class="primary" id="tfSave" type="button">儲存旅程</button></div>
+        <p class="hint small" style="margin-top:8px">旅程期間在「旅遊」記帳會自動標記此旅程並切換至預設幣種；出發前購買的機票、酒店亦可手動選擇旅程。</p>
+      </div>
+      <div id="tripList" style="margin-top:12px"></div>
     </section>
 
     <!-- Search -->
@@ -443,6 +469,7 @@ a{color:inherit}
       <label class="field" id="reRateF">匯率（1 外幣 = ? HKD）<input class="text-in" id="reRate" type="text" inputmode="decimal"></label>
     </div>
     <label class="field">備註<input class="text-in" id="reRemark" type="text" autocomplete="off"></label>
+    <label class="field">旅程<select class="text-in" id="reTrip"></select></label>
     <p class="hint small" id="reHkd"></p>
     <div class="row-btns" style="margin-top:12px">
       <button class="ghost danger" id="reDel" type="button">刪除</button>
@@ -476,7 +503,7 @@ const PAL_L = ['#2a78d6','#eb6834','#1baf7a','#eda100','#e87ba4','#008300','#625
 const PAL_D = ['#3987e5','#d95926','#199e70','#c98500','#d55181','#0ca30c','#9085e9','#e66767'];
 const pal = () => matchMedia('(prefers-color-scheme: dark)').matches ? PAL_D : PAL_L;
 const secColor = sec => pal()[Math.max(0, ORDER.indexOf(sec))];
-const TITLES = {input:'新增支出', expense:'支出概覽', analysis:'每月分析', inbox:'待確認消費', search:'搜尋', settings:'設定'};
+const TITLES = {input:'新增支出', expense:'支出概覽', analysis:'每月分析', trips:'旅程', inbox:'待確認消費', search:'搜尋', settings:'設定'};
 const IH = 40;
 
 const $ = s => document.querySelector(s);
@@ -561,7 +588,7 @@ async function loadFixed(){ if (S.fixed) return S.fixed; const j = await get({ac
 const getQ = () => JSON.parse(localStorage.getItem('expenseQueue') || '[]');
 const setQ = q => { localStorage.setItem('expenseQueue', JSON.stringify(q)); updateSync(); };
 let flushing = false, inFlight = null, syncErr = '';
-const API_VERSION = 6; // 與 Code.gs 的 API_VERSION 對應
+const API_VERSION = 7; // 與 Code.gs 的 API_VERSION 對應
 // 同步健康狀態（只存本機）：okAt 最後成功同步時間；err／errAt 最近一次錯誤
 function noteHealth(ok, err){
   const h = lsGet('syncHealth', {});
@@ -647,6 +674,7 @@ function refresh(){
   if (S.page==='analysis') renderAnalysis();
   if (S.page==='search') renderSearch();
   if (S.page==='inbox') renderInbox();
+  if (S.page==='trips') renderTrips();
   if (S.page==='settings') renderSettings();
 }
 $$('.nav-item').forEach(b => b.addEventListener('click', () => go(b.dataset.page)));
@@ -671,6 +699,7 @@ function renderTabs(){
     : '固定項目由下個月 1 號起自動入帳；加價或取消可到 Expense 頁修改。';
   $('#cur').disabled = S.section === '固定'; $('#curWrap').classList.toggle('locked', S.section === '固定');
   renderRemarkChips();
+  renderTripRow();
 }
 
 /* ---------- 幣種／匯率 ---------- */
@@ -715,9 +744,9 @@ $('#fxRate').addEventListener('input', e => {
   updHkd();
 });
 $('#fxSrc').addEventListener('click', () => { const m = lsGet('fxManual', {}); delete m[S.cur]; lsSet('fxManual', m); setCur(S.cur); });
-function renderDate(){ $('#dateText').textContent = dateLabel(S.date); $('#todayTag').textContent = S.date === todayStr() ? '今天' : ''; }
+function renderDate(){ $('#dateText').textContent = dateLabel(S.date); $('#todayTag').textContent = S.date === todayStr() ? '今天' : ''; S.tripTouched = false; if (typeof renderTripRow === 'function') renderTripRow(); }
 $('#cycleSeg').addEventListener('click', e => { const b = e.target.closest('[data-cy]'); if (!b) return; S.cycle = b.dataset.cy; renderTabs(); });
-$$('.tab').forEach(b => b.addEventListener('click', () => { S.section = b.dataset.s; S.item = null; S.cycle = 'M'; renderTabs(); setCur(S.section === '旅遊' ? lsGet('lastTravelCur', 'HKD') : 'HKD'); }));
+$$('.tab').forEach(b => b.addEventListener('click', () => { S.section = b.dataset.s; S.item = null; S.cycle = 'M'; renderTabs(); setCur(S.section === '旅遊' ? (tripObj(S.trip)?.currency || lsGet('lastTravelCur', 'HKD')) : 'HKD'); }));
 $('#itemGrid').addEventListener('click', e => { const c = e.target.closest('.chip'); if (!c) return; S.item = c.dataset.item; renderTabs(); $('#amount').focus(); keepSaveVisible(); });
 
 /* ---------- 鍵盤彈出時，確保「儲存支出」按鈕不被遮住 ---------- */
@@ -784,6 +813,7 @@ async function save(){
   const rec = { id:uid(), date:S.date, section:S.section, item:S.item, amount:round2(orig*rate), remark:cleanRemark(),
     currency:cur, fxRate:rate, origAmount:orig };
   if (S.section === '固定') rec.cycle = S.cycle;
+  if (S.section === '旅遊' && S.trip) rec.trip = S.trip;
   // 樂觀寫入：先存入本機佇列並即時更新畫面，再於背景同步至 Google Sheet
   setQ([...getQ(), rec]); learnRemarks([{...rec, createdAt:new Date().toISOString()}]);
   // 提示包含項目、金額（外幣附港幣換算）及非今天的日期，方便即時核對
@@ -964,6 +994,7 @@ function openRec(id){
   $('#reAmt').value = withCommas(r.currency && r.currency !== 'HKD' ? r.origAmount : r.amount);
   $('#reRate').value = r.currency && r.currency !== 'HKD' ? fmtRate(r.fxRate) : '';
   $('#reRemark').value = r.remark || '';
+  $('#reTrip').innerHTML = tripOpts(r.trip || ''); $('#reTrip').disabled = fixed;
   reUpd(); $('#recOverlay').classList.add('show');
 }
 const closeRec = () => $('#recOverlay').classList.remove('show');
@@ -979,7 +1010,7 @@ $('#reSave').addEventListener('click', async () => {
   if (!(a > 0)) return toast('請輸入有效金額');
   if (!(rate > 0)) return toast('請輸入有效匯率');
   const orig = round2(a);
-  const upd = { date, section:$('#reSec').value, item:$('#reItem').value, remark:$('#reRemark').value.trim(),
+  const upd = { date, section:$('#reSec').value, item:$('#reItem').value, remark:$('#reRemark').value.trim(), trip:$('#reTrip').value,
     currency:cur, fxRate:rate, origAmount:orig, amount:round2(orig*rate) };
   const pend = getQ().find(x => x.id === r.id);
   if (pend && inFlight === r.id) return toast('此紀錄正在同步，請稍後再修改');
@@ -1244,6 +1275,89 @@ $('#ruleBody').addEventListener('click', async e => {
   try { await post({action:'deleteRule', merchant:m}); toast('已刪除規則'); renderRules(); } catch(err){ toast(errMsg(err)); }
 });
 
+/* ---------- 旅程（第 4 期） ---------- */
+S.trips = (() => { try { return JSON.parse(localStorage.getItem('tripsCfg')) || []; } catch(e){ return []; } })();
+const tripObj = n => S.trips.find(t => t.name === n);
+// 預設旅程：日期落在旅程期間；否則 60 日內即將出發的旅程（出發前買機票）
+function defaultTrip(date){
+  const inT = S.trips.filter(t => t.start && date >= t.start && date <= t.end).sort((a,b) => b.start.localeCompare(a.start))[0];
+  if (inT) return inT.name;
+  const soon = S.trips.filter(t => t.start > date && (Date.parse(t.start) - Date.parse(date)) / 864e5 <= 60).sort((a,b) => a.start.localeCompare(b.start))[0];
+  return soon ? soon.name : '';
+}
+const tripOpts = sel => `<option value="">不屬任何旅程</option>` + S.trips.filter(t => t.start)
+  .map(t => `<option value="${esc(t.name)}"${t.name === sel ? ' selected' : ''}>${esc(t.name)}</option>`).join('')
+  + (sel && !S.trips.some(t => t.name === sel && t.start) ? `<option value="${esc(sel)}" selected>${esc(sel)}</option>` : '');
+function renderTripRow(){
+  if (!S.trips) return;
+  const show = S.section === '旅遊' && S.trips.some(t => t.start);
+  $('#tripRow').hidden = !show; if (!show) return;
+  if (!S.tripTouched) S.trip = defaultTrip(S.date);
+  $('#tripSel').innerHTML = tripOpts(S.trip);
+}
+$('#tripSel').addEventListener('change', e => {
+  S.trip = e.target.value; S.tripTouched = true;
+  const c = tripObj(S.trip)?.currency; if (c) setCur(c);
+});
+function syncTrips(){
+  return get({action:'trips'}).then(j => { S.trips = j.trips || []; lsSet('tripsCfg', S.trips.map(({name,start,end,currency}) => ({name,start,end,currency}))); renderTripRow(); return S.trips; }).catch(() => S.trips);
+}
+function tfReset(t){
+  S.tfOld = t ? t.name : '';
+  $('#tfTitle').textContent = t ? `修改旅程：${t.name}` : '新增旅程';
+  $('#tfName').value = t?.name || ''; $('#tfStart').value = t?.start || ''; $('#tfEnd').value = t?.end || '';
+  $('#tfCur').innerHTML = $('#cur').innerHTML; $('#tfCur').value = t?.currency || 'JPY';
+  $('#tfCancel').hidden = !t;
+}
+async function renderTrips(){
+  if (!S.tfOld) tfReset();
+  const box = $('#tripList'); box.innerHTML = '<p class="muted">載入中…</p>';
+  const trips = await syncTrips(), today = todayStr();
+  box.innerHTML = trips.length ? trips.map(t => {
+    const days = t.start ? Math.round((Date.parse(t.end) - Date.parse(t.start)) / 864e5) + 1 : 0;
+    const items = Object.entries(t.byItem || {}).sort((a,b) => b[1]-a[1]), mx = items[0]?.[1] || 1;
+    const now = t.start && today >= t.start && today <= t.end;
+    const fx = Object.entries(t.byCur || {}).map(([c,v]) => curMoney(round2(v), c)).join('、');
+    return `<div class="card trip-card">
+      <div class="trip-head"><div><b>${esc(t.name)}</b>${now ? '<span class="trip-now">進行中</span>' : ''}
+        <div class="sub muted small">${t.start ? `${t.start.slice(5).replace('-','/')}–${t.end.slice(5).replace('-','/')}，${days} 日` : '只見於紀錄（未設日期）'}${t.currency ? `，${t.currency}` : ''}</div></div>
+        ${t.start ? `<button class="ghost" type="button" data-tedit="${esc(t.name)}">修改</button>` : ''}</div>
+      <div class="total">${money(round2(t.total || 0))}</div>
+      <div class="sub muted small">${t.count || 0} 筆${days && t.total ? `，每日平均 ${money(round2(t.total / days))}` : ''}${fx ? `，外幣 ${fx}` : ''}</div>
+      ${items.slice(0,6).map(([k,v]) => `<div class="bar-row"><span>${esc(k)}</span><span class="bar"><i style="width:${v/mx*100}%;background:${secColor('旅遊')}"></i></span><span class="num">${money(round2(v))}</span></div>`).join('')}
+    </div>`;
+  }).join('') : '<div class="card"><p class="muted">未有旅程。在上方輸入名稱及日期即可新增。</p></div>';
+}
+$('#tripList').addEventListener('click', e => { const b = e.target.closest('[data-tedit]'); if (!b) return; tfReset(tripObj(b.dataset.tedit)); scrollTo({top:0, behavior:'smooth'}); });
+$('#tfCancel').addEventListener('click', () => tfReset());
+$('#tfSave').addEventListener('click', async () => {
+  const t = { name:$('#tfName').value.trim(), start:$('#tfStart').value, end:$('#tfEnd').value, currency:$('#tfCur').value };
+  if (!t.name) return toast('請輸入旅程名稱');
+  if (!t.start || !t.end || t.end < t.start) return toast('請選擇正確的出發及回程日期');
+  const btn = $('#tfSave'); btn.disabled = true;
+  try {
+    await post({action:'saveTrip', ...t, oldName:S.tfOld || t.name});
+    if (S.tfOld && S.tfOld !== t.name){ S.cache = {}; if (S.trip === S.tfOld) S.trip = t.name; }
+    toast(S.tfOld ? '已更新旅程' : '已新增旅程'); S.tfOld = ''; tfReset(); renderTrips();
+  } catch(e){ toast(errMsg(e)); }
+  btn.disabled = false;
+});
+
+/* ---------- 主畫面捷徑（manifest shortcuts）：?s=類別&i=項目 或 ?p=頁面 ---------- */
+function applyLaunchParams(){
+  const q = new URLSearchParams(location.search); if (!q.toString()) return false;
+  history.replaceState(null, '', location.pathname);
+  if (q.get('p') && TITLES[q.get('p')]){ go(q.get('p')); return true; }
+  const sec = q.get('s'), item = q.get('i');
+  if (sec && SECTIONS[sec]){
+    go('input'); S.section = sec; S.item = SECTIONS[sec].some(x => x[0] === item) ? item : null; S.cycle = 'M';
+    renderTabs(); setCur(sec === '旅遊' ? (tripObj(S.trip)?.currency || lsGet('lastTravelCur', 'HKD')) : 'HKD');
+    if (S.item) setTimeout(() => { $('#amount').focus(); keepSaveVisible(); }, 300);
+    return true;
+  }
+  return false;
+}
+
 /* ---------- 搜尋 ---------- */
 let srT;
 function renderSearch(){
@@ -1401,7 +1515,8 @@ renderTabs(); renderDate(); updateSync(); setCur('HKD');
 setTimeout(() => { if ($('#remark').value && !cleanRemark()) $('#remark').value = ''; }, 800);
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('./sw.js').catch(() => {});
 if (!cfg.url) go('settings'); else {
-  go('input'); flushQ(); syncItems(); syncSettings(); loadInbox(true);
+  if (!applyLaunchParams()) go('input');
+  flushQ(); syncItems(); syncSettings(); loadInbox(true); syncTrips();
   // 閒置時預載上兩個月（分析頁預設及環比用），同時累積常用備註
   setTimeout(() => { const m = todayStr().slice(0,7); [1,2].forEach(k => loadMonth(shiftYm(m,-k)).catch(() => {})); }, 2000);
 }

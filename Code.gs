@@ -1,14 +1,15 @@
 /**** 記帳簿 後端：貼到 Google Sheet → 擴充功能 → Apps Script ****/
 // TOKEN 不再寫在程式碼內：請到「專案設定 → 指令碼屬性」新增屬性 TOKEN（值 = 你的密碼）。
 // 之後更新 Code.gs 可直接整份貼上；更換 TOKEN 只需改屬性值，毋須重新部署。
-const API_VERSION = 6;            // 前端用來檢查 Code.gs 是否已更新
+const API_VERSION = 7;            // 前端用來檢查 Code.gs 是否已更新
 const BACKUP_FOLDER = '記帳簿備份'; // Google Drive 備份資料夾名稱
 const BACKUP_KEEP = 8;            // 保留最近 8 份（約 2 個月）
 const REC = 'Records', FIX = 'Fixed', ITEMS = 'Items', SETTINGS = 'Settings', INBOX = 'Inbox', MERCH = 'Merchants';
 const WD_IDLE_DAYS = 3;           // 看門狗：連續 N 日沒有新增紀錄便提醒
 const WD_INBOX_DAYS = 3;          // 看門狗：通知轉發器 N 日沒有回報便提醒（第 5 期啟用）
 // Amount 一律為港幣；外幣支出另記 Currency / FxRate（1 外幣 = ? HKD）/ OrigAmount（原幣金額）
-const REC_HEAD = ['ID', 'Date', 'Section', 'Item', 'Amount', 'Remark', 'CreatedAt', 'FixedID', 'Currency', 'FxRate', 'OrigAmount'];
+// Trip：旅程名稱（旅遊支出可標記所屬旅程，例如機票可在出發前購買）
+const REC_HEAD = ['ID', 'Date', 'Section', 'Item', 'Amount', 'Remark', 'CreatedAt', 'FixedID', 'Currency', 'FxRate', 'OrigAmount', 'Trip'];
 // Cycle：M = 每月、Y = 每年（於 StartYm 的月份入帳）
 const FIX_HEAD = ['ID', 'Item', 'Amount', 'Remark', 'StartYm', 'Active', 'UpdatedAt', 'History', 'Cycle'];
 // 自訂快選項目；某 Section 沒有任何列時，前端使用內建預設
@@ -18,6 +19,7 @@ const SETTINGS_HEAD = ['Key', 'Value'];
 // 通知自動記帳：Inbox 收件（Status：pending／auto／confirmed／dismissed／ignored／skip）；Merchants 商戶規則（Mode：auto／ask／ignore）
 const INBOX_HEAD = ['ID', 'ReceivedAt', 'Source', 'Raw', 'Merchant', 'Currency', 'OrigAmount', 'Amount', 'TxDate', 'Status', 'RecordID', 'Suggest'];
 const MERCH_HEAD = ['Merchant', 'Section', 'Item', 'Remark', 'Mode', 'Count', 'UpdatedAt'];
+const TRIPS = 'Trips', TRIPS_HEAD = ['Name', 'Start', 'End', 'Currency', 'Note']; // Start／End 為純文字 yyyy-MM-dd
 const MEAL = '@meal'; // 項目「按時間」：早／午／晚餐由交易時間決定
 
 function tz_() { return SpreadsheetApp.getActive().getSpreadsheetTimeZone(); }
@@ -51,13 +53,14 @@ function isOn_(v) { return v === true || String(v).toUpperCase() === 'TRUE'; }
 /** 首次執行一次：建立工作表 + 每月 1 號凌晨 1 時的 trigger */
 function setup() {
   const ss = SpreadsheetApp.getActive();
-  [[REC, REC_HEAD], [FIX, FIX_HEAD], [ITEMS, ITEMS_HEAD], [SETTINGS, SETTINGS_HEAD], [INBOX, INBOX_HEAD], [MERCH, MERCH_HEAD]].forEach(([n, h]) => {
+  [[REC, REC_HEAD], [FIX, FIX_HEAD], [ITEMS, ITEMS_HEAD], [SETTINGS, SETTINGS_HEAD], [INBOX, INBOX_HEAD], [MERCH, MERCH_HEAD], [TRIPS, TRIPS_HEAD]].forEach(([n, h]) => {
     const sh = ss.getSheetByName(n) || ss.insertSheet(n);
     if (sh.getLastRow() === 0) { sh.appendRow(h); sh.setFrozenRows(1); }
   });
   ensureRecHead_(); ensureFixHead_();
   sheet_(REC).getRange('B:B').setNumberFormat('yyyy-mm-dd');
   sheet_(FIX).getRange('E:E').setNumberFormat('@'); // 防止 2026-11 被轉成日期
+  sheet_(TRIPS).getRange('B:C').setNumberFormat('@');
   ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
   ScriptApp.newTrigger('monthlyJob').timeBased().onMonthDay(1).atHour(1).create();
   ScriptApp.newTrigger('weeklyBackup').timeBased().onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(3).create();
@@ -200,6 +203,20 @@ function doGet(e) {
     if (p.action === 'list') return { rows: rows_(REC).filter(r => r[0] && ym_(r[1]) === p.month).map(recObj_) };
     if (p.action === 'fixed') return { rows: rows_(FIX).filter(r => r[0]).map(fixObj_) };
     if (p.action === 'settings') return { settings: settings_() };
+    if (p.action === 'trips') {
+      // 旅程定義 + 統計（合計、筆數、按項目、按原幣），包括只在紀錄中出現的旅程名稱
+      const map = {};
+      trips_().forEach(t => map[t.name] = Object.assign(t, { total: 0, count: 0, byItem: {}, byCur: {}, first: '', last: '' }));
+      rows_(REC).forEach(r => {
+        const n = String(r[11] || ''); if (!r[0] || !n) return;
+        const t = map[n] = map[n] || { name: n, start: '', end: '', currency: '', note: '', total: 0, count: 0, byItem: {}, byCur: {}, first: '', last: '' };
+        const amt = Number(r[4]), cur = String(r[8] || 'HKD'), d = ymd_(r[1]);
+        t.total += amt; t.count++; t.byItem[r[3]] = (t.byItem[r[3]] || 0) + amt;
+        if (cur !== 'HKD') t.byCur[cur] = (t.byCur[cur] || 0) + Number(r[10] || 0);
+        if (!t.first || d < t.first) t.first = d; if (!t.last || d > t.last) t.last = d;
+      });
+      return { trips: Object.keys(map).map(k => map[k]).sort((a, b) => String(b.start || b.first).localeCompare(String(a.start || a.first))) };
+    }
     if (p.action === 'inbox') {
       const sh = sheet_(INBOX); if (!sh) return { rows: [] };
       const rows = sh.getDataRange().getValues().slice(1).filter(r => r[9] === 'pending').slice(-100).map(r => ({
@@ -264,7 +281,7 @@ function write_(b) {
       const rate = cur === 'HKD' ? 1 : Number(b.fxRate);
       if (!(rate > 0)) throw new Error('匯率無效');
       const orig = b.origAmount != null && cur !== 'HKD' ? Number(b.origAmount) : Number(b.amount);
-      rec.appendRow([b.id, b.date, b.section, b.item, Number(b.amount), b.remark || '', new Date(), fixedId, cur, rate, orig]);
+      rec.appendRow([b.id, b.date, b.section, b.item, Number(b.amount), b.remark || '', new Date(), fixedId, cur, rate, orig, fixedId ? '' : String(b.trip || '')]);
       if (fixedId) { ensureFixHead_(); fix.appendRow([fixedId, b.item, Number(b.amount), b.remark || '', b.date.slice(0, 7), true, new Date(), '', b.cycle === 'Y' ? 'Y' : 'M']); }
       return {};
     }
@@ -280,6 +297,7 @@ function write_(b) {
       if (!(Number(b.amount) > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(b.date)) throw new Error('資料無效');
       rec.getRange(row, 2, 1, 5).setValues([[b.date, isFixed ? '固定' : b.section, b.item, Number(b.amount), b.remark || '']]);
       rec.getRange(row, 9, 1, 3).setValues([[cur, rate, orig]]);
+      if (b.trip !== undefined) rec.getRange(row, 12).setValue(isFixed ? '' : String(b.trip || ''));
       return {};
     }
     case 'saveItems': {
@@ -320,6 +338,27 @@ function write_(b) {
     case 'deleteRule': {
       const sh = sheet_(MERCH), key = merchKey_(b.merchant);
       if (sh) { const v = sh.getDataRange().getValues(); for (let i = v.length - 1; i >= 1; i--) if (v[i][0] === key) sh.deleteRow(i + 1); }
+      return {};
+    }
+    case 'saveTrip': {
+      const name = String(b.name || '').trim().slice(0, 20);
+      if (!name || !/^\d{4}-\d{2}-\d{2}$/.test(b.start) || !/^\d{4}-\d{2}-\d{2}$/.test(b.end) || b.end < b.start) throw new Error('旅程資料無效');
+      const sh = ensureSheet_(TRIPS, TRIPS_HEAD); sh.getRange('B:C').setNumberFormat('@');
+      const v = sh.getDataRange().getValues(), old = String(b.oldName || name);
+      let row = 0; for (let i = 1; i < v.length; i++) if (v[i][0] === old) row = i + 1;
+      if (old !== name && v.some((r, i) => i > 0 && r[0] === name)) throw new Error('已有同名旅程');
+      const vals = [[name, b.start, b.end, String(b.currency || ''), String(b.note || '')]];
+      if (row) sh.getRange(row, 1, 1, 5).setValues(vals); else sh.appendRow(vals[0]);
+      if (old !== name) { // 改名：同步更新紀錄上的旅程標籤
+        const rv = rec.getDataRange().getValues();
+        for (let i = 1; i < rv.length; i++) if (rv[i][11] === old) rec.getRange(i + 1, 12).setValue(name);
+      }
+      return {};
+    }
+    case 'deleteTrip': {
+      const sh = sheet_(TRIPS);
+      if (sh) { const v = sh.getDataRange().getValues(); for (let i = v.length - 1; i >= 1; i--) if (v[i][0] === b.name) sh.deleteRow(i + 1); }
+      if (b.untag) { const rv = rec.getDataRange().getValues(); for (let i = 1; i < rv.length; i++) if (rv[i][11] === b.name) rec.getRange(i + 1, 12).setValue(''); }
       return {};
     }
     case 'saveSettings': {
@@ -374,6 +413,17 @@ function handle_(p, fn) {
   } catch (err) {
     return json_({ ok: false, error: err.message });
   }
+}
+
+/* ============ 旅程（第 4 期） ============ */
+function trips_() {
+  const sh = sheet_(TRIPS); if (!sh) return [];
+  return sh.getDataRange().getValues().slice(1).filter(r => r[0]).map(r => ({ name: String(r[0]), start: ymd_(r[1]), end: ymd_(r[2]), currency: String(r[3] || ''), note: String(r[4] || '') }));
+}
+/** 日期落在哪個旅程（出發前後各 0 日；多個重疊時取最近開始者） */
+function tripFor_(date) {
+  const t = trips_().filter(x => x.start && x.end && date >= x.start && date <= x.end).sort((a, b) => b.start.localeCompare(a.start))[0];
+  return t ? t.name : '';
 }
 
 /* ============ 通知自動記帳（第 5 期） ============ */
@@ -449,7 +499,7 @@ function addRecord_(x) {
   const rec = sheet_(REC); ensureRecHead_();
   if (findRow_(rec, x.id)) return x.id;
   const rate = x.currency === 'HKD' ? 1 : round2_(x.amount / x.origAmount * 1e4) / 1e4;
-  rec.appendRow([x.id, x.date, x.section, x.item, Number(x.amount), x.remark || '', new Date(), '', x.currency, rate, Number(x.origAmount)]);
+  rec.appendRow([x.id, x.date, x.section, x.item, Number(x.amount), x.remark || '', new Date(), '', x.currency, rate, Number(x.origAmount), x.section === '旅遊' ? tripFor_(x.date) : '']);
   return x.id;
 }
 function round2_(n) { return Math.round(n * 100) / 100; }
@@ -502,7 +552,7 @@ function recObj_(r) {
     id: r[0], date: ymd_(r[1]), section: r[2], item: r[3], amount: Number(r[4]), remark: String(r[5] || ''),
     createdAt: r[6] instanceof Date ? r[6].toISOString() : String(r[6] || ''), fixedId: r[7] || '',
     currency: String(r[8] || 'HKD'), fxRate: Number(r[9]) || 1,
-    origAmount: r[10] === '' || r[10] == null ? Number(r[4]) : Number(r[10])
+    origAmount: r[10] === '' || r[10] == null ? Number(r[4]) : Number(r[10]), trip: String(r[11] || '')
   };
 }
 
