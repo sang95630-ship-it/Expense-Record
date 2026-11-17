@@ -165,6 +165,13 @@ h2{font-size:16px;margin:28px 0 10px}
 .tbl{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px;font-variant-numeric:tabular-nums}
 .tbl td,.tbl th{padding:4px 6px;border-bottom:1px solid var(--line);text-align:right} .tbl td:first-child,.tbl th:first-child{text-align:left}
 details summary{cursor:pointer;color:var(--muted);font-size:13px;margin-top:10px}
+/* 固定項目摺疊（狀態記於 localStorage fxFold） */
+details.fold>summary{list-style:none;display:flex;align-items:center;gap:8px;margin:28px 0 10px;color:var(--ink);font-size:inherit;-webkit-user-select:none;user-select:none}
+details.fold>summary::-webkit-details-marker{display:none}
+details.fold>summary h2{margin:0;flex:1}
+details.fold>summary .chev{color:var(--muted);font-size:13px;transition:transform .2s}
+details.fold[open]>summary .chev{transform:rotate(90deg)}
+details.fold>summary .cnt{font-size:12px;color:var(--muted)}
 .ib-badge{margin-left:auto;background:var(--danger);color:#fff;border-radius:999px;font-size:11px;padding:1px 7px;font-weight:700}
 .ib-banner{display:flex;width:100%;align-items:center;gap:8px;border:0;border-radius:12px;padding:10px 14px;margin:0 0 12px;background:var(--warn-bg);color:var(--warn-ink);font-weight:500;text-align:left}
 .ib-banner span:last-child{margin-left:auto}
@@ -926,14 +933,17 @@ async function renderExpense(){
     // 每月約數：年繳項目攤分為 1/12
     const fxTotal = fixed.filter(f => f.active).reduce((a,f) => a + (f.cycle === 'Y' ? f.amount/12 : f.amount), 0);
     const hasY = fixed.some(f => f.active && f.cycle === 'Y');
-    html += `<h2>固定項目（每月${hasY ? '約' : ''} ${money(round2(fxTotal))}${hasY ? '，年繳已攤分' : ''}）</h2><div class="card list">` + (fx.length ? fx.map(f => {
+    const fxOpen = lsGet('fxFold', '0') === '1';
+    html += `<details class="fold" id="fxFold"${fxOpen ? ' open' : ''}><summary><span class="chev">▶</span>
+      <h2>固定項目（每月${hasY ? '約' : ''} ${money(round2(fxTotal))}${hasY ? '，年繳已攤分' : ''}）</h2><span class="cnt">${fixed.filter(f => f.active).length} 項</span></summary>
+      <div class="card list">` + (fx.length ? fx.map(f => {
       const last = f.history ? f.history.split('; ').pop() : '';
       return `<div class="rec${f.active ? '' : ' off'}"><span class="em">${iconOf('固定', f.item)}</span>
         <div class="main"><div>${esc(f.remark || f.item)}</div>
         <div class="sub">${esc(f.item)}，${f.cycle === 'Y' ? `每年 ${Number(f.startYm.slice(5))} 月，` : ''}${ymLabel(f.startYm)}起${f.active ? '' : '，已停用'}${last ? '，最近調整 '+esc(last) : ''}</div></div>
         <span class="amt">${money(f.amount)}<small>/${f.cycle === 'Y' ? '年' : '月'}</small></span>
         <button class="ghost" data-fx="${esc(f.id)}">修改</button></div>`;
-    }).join('') : '<p class="muted small">未有固定項目。在「新增支出」選擇「固定」即可加入。</p>') + '</div>';
+    }).join('') : '<p class="muted small">未有固定項目。在「新增支出」選擇「固定」即可加入。</p>') + '</div></details>';
 
     const sorted = [...rows].sort((a,b) => b.date.localeCompare(a.date) || String(b.createdAt).localeCompare(String(a.createdAt)));
     let lastDay = '', list = '';
@@ -942,6 +952,7 @@ async function renderExpense(){
     box.innerHTML = html;
   } catch(e){ box.innerHTML = `<p class="muted">${esc(errMsg(e))}</p>`; }
 }
+$('#expBody').addEventListener('toggle', e => { if (e.target.id === 'fxFold') lsSet('fxFold', e.target.open ? '1' : '0'); }, true);
 $('#expBody').addEventListener('click', e => {
   const ed = e.target.closest('[data-edit]'), fx = e.target.closest('[data-fx]');
   if (ed) openRec(ed.dataset.edit);
