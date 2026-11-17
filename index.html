@@ -169,21 +169,22 @@ details summary{cursor:pointer;color:var(--muted);font-size:13px;margin-top:10px
 details.fold>summary{list-style:none;display:flex;align-items:center;gap:8px;margin:28px 0 10px;color:var(--ink);font-size:inherit;-webkit-user-select:none;user-select:none}
 details.fold>summary::-webkit-details-marker{display:none}
 details.fold>summary h2{margin:0;flex:1}
-details.fold>summary .chev{color:var(--muted);font-size:13px;transition:transform .2s}
-details.fold[open]>summary .chev{transform:rotate(90deg)}
+/* 摺疊按鈕：右側圓形 ⌄，展開時旋轉 180° 成 ⌃（觸控範圍 26px） */
+.fold-btn{width:26px;height:26px;border-radius:50%;background:var(--surface-2);color:var(--ink);display:grid;place-items:center;flex-shrink:0;transition:transform .2s}
+.fold-btn svg{display:block}
+details[open]>summary .fold-btn{transform:rotate(180deg)}
+details.fold>summary .fold-btn{background:var(--surface)}
 details.fold>summary .cnt{font-size:12px;color:var(--muted)}
 /* 支出明細：按週分組（星期日開始），每週一張可摺疊卡 */
 details.wk{background:var(--surface);border-radius:18px;padding:0 16px;margin-bottom:10px}
 details.wk>summary{list-style:none;cursor:pointer;color:var(--ink);font-size:inherit;margin:0;padding:12px 0 10px;-webkit-user-select:none;user-select:none}
 details.wk>summary::-webkit-details-marker{display:none}
 .wk-top{display:flex;align-items:center;gap:8px}
-.wk-top .chev{color:var(--muted);font-size:12px;width:12px;transition:transform .2s}
-details.wk[open] .wk-top .chev{transform:rotate(90deg)}
 .wk-top b{font-size:15px;font-variant-numeric:tabular-nums}
 .wk-top .cnt{font-size:12px;color:var(--muted)}
 .wk-top .tot{margin-left:auto;font-weight:700;font-variant-numeric:tabular-nums}
 .wk-now{font-size:11px;padding:1px 8px;border-radius:999px;background:var(--soft);color:var(--ink)}
-.wk-bar{display:block;height:5px;border-radius:3px;background:var(--soft);overflow:hidden;margin:8px 0 0 20px}
+.wk-bar{display:block;height:5px;border-radius:3px;background:var(--soft);overflow:hidden;margin:8px 34px 0 0}
 .wk-bar i{display:block;height:100%;background:var(--primary);border-radius:3px}
 details.wk .day-head{display:flex;justify-content:space-between;padding:10px 0 2px;border-top:1px solid var(--line)}
 details.wk .day-head:first-of-type{border-top:0}
@@ -950,8 +951,8 @@ async function renderExpense(){
     const fxTotal = fixed.filter(f => f.active).reduce((a,f) => a + (f.cycle === 'Y' ? f.amount/12 : f.amount), 0);
     const hasY = fixed.some(f => f.active && f.cycle === 'Y');
     const fxOpen = lsGet('fxFold', '0') === '1';
-    html += `<details class="fold" id="fxFold"${fxOpen ? ' open' : ''}><summary><span class="chev">▶</span>
-      <h2>固定項目（每月${hasY ? '約' : ''} ${money(round2(fxTotal))}${hasY ? '，年繳已攤分' : ''}）</h2><span class="cnt">${fixed.filter(f => f.active).length} 項</span></summary>
+    html += `<details class="fold" id="fxFold"${fxOpen ? ' open' : ''}><summary>
+      <h2>固定項目（每月${hasY ? '約' : ''} ${money(round2(fxTotal))}${hasY ? '，年繳已攤分' : ''}）</h2><span class="cnt">${fixed.filter(f => f.active).length} 項</span>${FOLD_BTN}</summary>
       <div class="card list">` + (fx.length ? fx.map(f => {
       const last = f.history ? f.history.split('; ').pop() : '';
       return `<div class="rec${f.active ? '' : ' off'}"><span class="em">${iconOf('固定', f.item)}</span>
@@ -975,6 +976,7 @@ $('#expBody').addEventListener('click', e => {
   if (fx) openFixed(fx.dataset.fx);
 });
 
+const FOLD_BTN = '<span class="fold-btn" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>';
 /* ---------- 支出明細：按週分組（星期日開始；跨月的週只計本月日子） ---------- */
 S.wkOpen = {}; // 本次使用期間手動展開／收起的週（key = 月份|週首日）
 function weekGroups(rows, monthTotal){
@@ -991,7 +993,7 @@ function weekGroups(rows, monthTotal){
     const key = `${S.expYm}|${w.start}`, tot = sum(w.rows);
     const isNow = today.slice(0,7) === S.expYm && Number(today.slice(8,10)) >= w.start && Number(today.slice(8,10)) <= w.end;
     const open = key in S.wkOpen ? S.wkOpen[key] : isNow;
-    const label = w.start === w.end ? `${w.start}/${m}` : `${w.start} - ${w.end}/${m}`;
+    const label = w.start === w.end ? `${w.start}/ ${m}` : `${w.start} - ${w.end}/ ${m}`;
     const days = {}; w.rows.forEach(r => (days[r.date] = days[r.date] || []).push(r));
     const body = Object.keys(days).sort().reverse().map(dt => {
       const list = days[dt].sort((a,b) => String(b.createdAt).localeCompare(String(a.createdAt)));
@@ -999,7 +1001,7 @@ function weekGroups(rows, monthTotal){
       return `<div class="day-head"><span>${m}月${d.getDate()}日（週${'日一二三四五六'[d.getDay()]}）</span><span class="num">${money(round2(sum(list)))}</span></div>` + list.map(r => recRow(r, true, true)).join('');
     }).join('');
     return `<details class="wk" data-wk="${key}"${open ? ' open' : ''}><summary>
-      <div class="wk-top"><span class="chev">▶</span><b>${label}</b>${isNow ? '<span class="wk-now">本週</span>' : ''}<span class="cnt">${w.rows.length} 筆</span><span class="tot">${money(round2(tot))}</span></div>
+      <div class="wk-top"><b>${label}</b>${isNow ? '<span class="wk-now">本週</span>' : ''}<span class="cnt">${w.rows.length} 筆</span><span class="tot">${money(round2(tot))}</span>${FOLD_BTN}</div>
       <span class="wk-bar"><i style="width:${monthTotal ? Math.max(2, tot / monthTotal * 100) : 0}%"></i></span></summary>
       <div class="list" style="padding:0">${body}</div></details>`;
   }).join('');
