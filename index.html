@@ -233,6 +233,15 @@ details.wk .rec:last-child{border-bottom:0}
 .seg{display:inline-flex;background:var(--soft);padding:3px;border-radius:10px;gap:2px}
 .seg button{border:0;background:none;padding:5px 14px;border-radius:8px;font-size:13px;color:var(--muted)}
 .seg button.active{background:var(--surface);color:var(--ink);font-weight:500}
+/* 支出概覽：頂部雙總額（可控／固定）＋明細分頁 */
+.split2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:6px 0 2px}
+.split2 .t2{font-size:22px;font-weight:700;line-height:1.2;font-variant-numeric:tabular-nums}
+.split2 .t2.dim{color:var(--muted)}
+.seg.full{display:grid;grid-template-columns:repeat(3,1fr);width:100%;margin:0 0 10px}
+.seg.full button{padding:7px 0}
+.wk-fix{display:block;font-size:12px;color:var(--muted);margin-top:4px}
+.wk-fix i{display:inline-block;width:7px;height:7px;border-radius:50%;margin-left:4px;vertical-align:1px}
+.fx-total{display:flex;justify-content:space-between;font-size:13px;padding:8px 4px 0}
 .stats{display:flex;gap:28px;flex-wrap:wrap}
 .stats .total{margin:0}
 .delta{font-size:14px;font-weight:500}
@@ -1028,10 +1037,15 @@ async function renderExpense(){
   try {
     const [rows, fixed] = await Promise.all([monthRows(S.expYm), loadFixed()]);
     const total = sum(rows);
-    const bySec = ORDER.map(s => [s, sum(rows.filter(r => r.section === s))]);
+    // 可控消費 = 日常＋旅遊＋其他；固定支出分開顯示，不混入分析
+    const varRows = rows.filter(r => r.section !== '固定'), fixRows = rows.filter(r => r.section === '固定');
+    const varTotal = sum(varRows), fixTotal = sum(fixRows);
+    const bySec = ORDER.filter(s => s !== '固定').map(s => [s, sum(rows.filter(r => r.section === s))]);
     const max = Math.max(...bySec.map(x => x[1]), 1), bud = budgets();
-    let html = `<div class="card${Object.keys(bud).some(k => k !== 'total') ? ' has-bud' : ''}"><div class="muted small">本月合計（${rows.length} 筆）</div><div class="total">${money(total)}</div>
-      ${bud.total ? budLine(total, bud.total) : ''}${S.expYm === todayStr().slice(0,7) ? projHtml(rows, total, bud.total) : ''}
+    let html = `<div class="card${Object.keys(bud).some(k => k !== 'total') ? ' has-bud' : ''}"><div class="muted small">本月合計 ${money(total)}（${rows.length} 筆）</div>
+      <div class="split2"><div><div class="muted small">可控消費</div><div class="t2">${money(round2(varTotal))}</div></div>
+        <div><div class="muted small">固定支出</div><div class="t2 dim">${money(round2(fixTotal))}</div></div></div>
+      ${bud.total ? budLine(total, bud.total) : ''}${S.expYm === todayStr().slice(0,7) ? projHtml(varRows, varTotal, fixTotal, bud.total) : ''}
       ${bySec.map(([s,v]) => { const b = bud[s], st = budStat(v, b);
         return `<div class="bar-row"><span>${s}</span><span class="bar"><i class="${st}" style="width:${Math.min(100, b ? v/b*100 : v/max*100)}%"></i></span>
         <span class="num">${money(v)}${b ? `<small> / ${money(b)}${st === 'over' ? ' ⛔' : st === 'warn' ? ' ⚠️' : ''}</small>` : ''}</span></div>`; }).join('')}</div>`;
@@ -1042,7 +1056,7 @@ async function renderExpense(){
     const hasY = fixed.some(f => f.active && f.cycle === 'Y');
     const fxOpen = lsGet('fxFold', '0') === '1';
     html += `<details class="fold" id="fxFold"${fxOpen ? ' open' : ''}><summary>
-      <h2>固定項目（每月${hasY ? '約' : ''} ${money(round2(fxTotal))}${hasY ? '，年繳已攤分' : ''}）</h2><span class="cnt">${fixed.filter(f => f.active).length} 項</span>${FOLD_BTN}</summary>
+      <h2>固定項目設定（每月${hasY ? '約' : ''} ${money(round2(fxTotal))}${hasY ? '，年繳已攤分' : ''}）</h2><span class="cnt">${fixed.filter(f => f.active).length} 項</span>${FOLD_BTN}</summary>
       <div class="card list">` + (fx.length ? fx.map(f => {
       const last = f.history ? f.history.split('; ').pop() : '';
       return `<div class="rec${f.active ? '' : ' off'}"><span class="em">${iconOf('固定', f.item)}</span>
@@ -1052,7 +1066,18 @@ async function renderExpense(){
         <button class="ghost" data-fx="${esc(f.id)}">修改</button></div>`;
     }).join('') : '<p class="muted small">未有固定項目。在「新增支出」選擇「固定」即可加入。</p>') + '</div></details>';
 
-    html += `<h2>支出明細</h2>${weekGroups(rows, total) || '<div class="card"><p class="muted small">此月份沒有支出紀錄。</p></div>'}`;
+    const tab = ['var','fix','all'].includes(S.expTab) ? S.expTab : 'var';
+    const empty = t => `<div class="card"><p class="muted small">${t}</p></div>`;
+    html += `<h2>支出明細</h2><div class="seg full" role="tablist">${[['var','可控消費'],['fix','固定支出'],['all','全部']].map(([k,l]) =>
+      `<button type="button" role="tab" data-etab="${k}" class="${k === tab ? 'active' : ''}" aria-selected="${k === tab}">${l}</button>`).join('')}</div>`;
+    if (tab === 'fix'){
+      const list = [...fixRows].sort((a,b) => b.date.localeCompare(a.date) || b.amount - a.amount);
+      html += list.length ? `<div class="card list">${list.map(r => recRow(r, true)).join('')}</div>
+        <div class="fx-total"><span class="muted">本月固定支出 ${list.length} 筆</span><b class="num">${money(round2(fixTotal))}</b></div>`
+        : empty('本月未有固定支出入帳。');
+    } else {
+      html += weekGroups(tab === 'all' ? rows : varRows, tab === 'all') || empty(tab === 'all' ? '此月份沒有支出紀錄。' : '此月份沒有可控消費紀錄。');
+    }
     box.innerHTML = html;
   } catch(e){ box.innerHTML = `<p class="muted">${esc(errMsg(e))}</p>`; }
 }
@@ -1061,15 +1086,17 @@ $('#expBody').addEventListener('toggle', e => {
   if (e.target.dataset?.wk) S.wkOpen[e.target.dataset.wk] = e.target.open;
 }, true);
 $('#expBody').addEventListener('click', e => {
-  const ed = e.target.closest('[data-edit]'), fx = e.target.closest('[data-fx]');
+  const ed = e.target.closest('[data-edit]'), fx = e.target.closest('[data-fx]'), et = e.target.closest('[data-etab]');
+  if (et){ S.expTab = et.dataset.etab; lsSet('expTab', S.expTab); return renderExpense(); }
   if (ed) openRec(ed.dataset.edit);
   if (fx) openFixed(fx.dataset.fx);
 });
 
 const FOLD_BTN = '<span class="fold-btn" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>';
 /* ---------- 支出明細：按週分組（星期日開始；跨月的週只計本月日子） ---------- */
+S.expTab = (() => { try { return JSON.parse(localStorage.getItem('expTab')) || 'var'; } catch(e){ return 'var'; } })();
 S.wkOpen = {}; // 本次使用期間手動展開／收起的週（key = 月份|週首日）
-function weekGroups(rows, monthTotal){
+function weekGroups(rows, showFix){
   if (!rows.length) return '';
   const [y, m] = S.expYm.split('-').map(Number), dim = daysIn(y, m), today = todayStr();
   const weeks = {}, varBase = sum(rows.filter(r => r.section !== '固定')); // 比例條只計日常、其他及旅遊
@@ -1092,7 +1119,8 @@ function weekGroups(rows, monthTotal){
     }).join('');
     return `<details class="wk" data-wk="${key}"${open ? ' open' : ''}><summary>
       <div class="wk-top"><b>${label}</b>${isNow ? '<span class="wk-now">本週</span>' : ''}<span class="cnt">${w.rows.length} 筆</span><span class="tot">${money(round2(tot))}</span>${FOLD_BTN}</div>
-      <span class="wk-bar"><i style="width:${varBase ? Math.max(vtot ? 2 : 0, vtot / varBase * 100) : 0}%"></i></span></summary>
+      <span class="wk-bar"><i style="width:${varBase ? Math.max(vtot ? 2 : 0, vtot / varBase * 100) : 0}%"></i></span>
+      ${showFix && tot - vtot > 0 ? `<span class="wk-fix">其中固定 ${money(round2(tot - vtot))}<i style="background:${secColor('固定')}"></i></span>` : ''}</summary>
       <div class="list" style="padding:0">${body}</div></details>`;
   }).join('');
 }
@@ -1102,20 +1130,21 @@ function budgets(){ const o = {}; ['total', ...ORDER].forEach(k => { const v = N
 const budStat = (used, b) => !b ? '' : used >= b ? 'over' : used >= b*0.8 ? 'warn' : 'ok';
 function budLine(used, b){
   const st = budStat(used, b), pct = Math.round(used/b*100);
-  const label = st === 'over' ? `⛔ 超出預算 ${money(round2(used-b))}` : st === 'warn' ? `⚠️ 接近預算，剩 ${money(round2(b-used))}` : `✓ 預算內，剩 ${money(round2(b-used))}`;
+  const label = st === 'over' ? `⛔ 超出總預算 ${money(round2(used-b))}` : st === 'warn' ? `⚠️ 接近總預算，剩 ${money(round2(b-used))}` : `✓ 總預算內，剩 ${money(round2(b-used))}`;
   return `<span class="bar big"><i class="${st}" style="width:${Math.min(100, used/b*100)}%"></i></span>
-    <div class="bud-line ${st}"><span>${label}</span><span class="num muted">${pct}%／預算 ${money(b)}</span></div>`;
+    <div class="bud-line ${st}"><span>${label}</span><span class="num muted">${pct}%／總預算 ${money(b)}</span></div>`;
 }
 // 月底預測：固定及旅遊按實數（不外推）；日常＋其他按已過日數的日均外推至整月
-function projHtml(rows, total, budTotal){
+// 月底預測（只計可控消費）：旅遊按實數；日常＋其他按日均外推。與總預算比較時加回固定支出
+function projHtml(varRows, varTotal, fixTotal, budTotal){
   const now = new Date(), day = now.getDate(), dim = daysIn(now.getFullYear(), now.getMonth()+1);
   if (day < 3) return '<p class="small muted" style="margin:10px 0 4px">第 3 日起顯示月底預測。</p>';
-  const lump = sum(rows.filter(r => r.section === '固定' || r.section === '旅遊')), daily = (total - lump) / day;
-  const proj = Math.round(lump + daily * dim);
-  const vs = !budTotal ? '' : proj > budTotal ? `<div class="small st-warn-t">⚠️ 按此速度將超出預算 ${money(proj - budTotal)}</div>`
-    : `<div class="small st-ok-t">✓ 預計月底仍剩 ${money(budTotal - proj)}</div>`;
-  return `<div class="proj"><span class="muted small">預計月底</span> <b class="num">${money(proj)}</b>
-    <div class="small muted">日常＋其他日均 ${money(round2(daily))} × ${dim} 日，另加固定及旅遊實數</div>${vs}</div>`;
+  const trip = sum(varRows.filter(r => r.section === '旅遊')), daily = (varTotal - trip) / day;
+  const proj = Math.round(trip + daily * dim), all = proj + Math.round(fixTotal);
+  const vs = !budTotal ? '' : all > budTotal ? `<div class="small st-warn-t">⚠️ 連固定支出 ${money(all)}，按此速度將超出總預算 ${money(all - budTotal)}</div>`
+    : `<div class="small st-ok-t">✓ 連固定支出 ${money(all)}，預計月底仍剩 ${money(budTotal - all)}</div>`;
+  return `<div class="proj"><span class="muted small">可控消費預計月底</span> <b class="num">${money(proj)}</b>
+    <div class="small muted">日常＋其他日均 ${money(round2(daily))} × ${dim} 日，另加旅遊實數</div>${vs}</div>`;
 }
 
 /* ---------- record editor（修改／刪除單筆） ---------- */
