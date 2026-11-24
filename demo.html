@@ -404,7 +404,7 @@ a{color:inherit}
         <label class="trip-row" id="tripRow" hidden>🧳<select class="text-in" id="tripSel" aria-label="旅程"></select></label>
         <div class="seg cy-seg" id="cycleSeg" hidden><button type="button" data-cy="M">每月</button><button type="button" data-cy="Y">每年</button></div>
         <p class="hint" id="fixedHint" hidden></p>
-        <div class="row-btns save-row"><button class="ghost" id="aaBtn" type="button" title="AA 分帳：只記錄你的份額" aria-label="AA 分帳">AA</button><button class="primary" id="saveBtn">確認</button></div>
+        <div class="row-btns save-row"><button class="ghost" id="clearBtn" type="button" title="清空已輸入及選擇的資料">取消</button><button class="ghost" id="aaBtn" type="button" title="AA 分帳：只記錄你的份額" aria-label="AA 分帳">AA</button><button class="primary" id="saveBtn">確認</button></div>
       </div>
       <h2>本月最近紀錄</h2>
       <div class="card list" id="recentList"><p class="muted small">載入中…</p></div>
@@ -2105,7 +2105,7 @@ function spRenderEd(){
   const sp = S.spEdit, P = sp.data.people, foreign = sp.currency !== 'HKD', sugg = spSuggest(P), exists = S.splits.some(x => x.id === sp.id);
   $('#spBody').innerHTML = `<div class="card">
       <strong>${exists ? '修改分帳' : '新增分帳'}</strong>
-      ${sp.data.src && !exists ? `<p class="hint small sp-src">${sp.data.src.rec ? `由${esc(sp.data.src.what || '現有紀錄')}轉為分帳：儲存後，原本的全額紀錄會由你的份額取代。` : sp.data.src.inbox ? `由${esc(sp.data.src.what || '待確認通知')}轉為分帳：儲存後只記錄你的份額，通知標記為已處理。` : `來自新增支出頁：儲存後只記錄你的份額，表格會清空。`}</p>` : ''}
+      ${sp.data.src && !exists ? `<p class="hint small sp-src">${sp.data.src.rec ? `由${esc(sp.data.src.what || '現有紀錄')}轉為分帳：儲存後，原本的全額紀錄會由你的份額取代。` : sp.data.src.inbox ? `由${esc(sp.data.src.what || '待確認通知')}轉為分帳：儲存後只記錄你的份額，通知標記為已處理。` : `儲存後，記帳簿只會記錄你應付的份額（不是全額），代墊部分列為待收，不計入支出；新增支出頁的表格會清空，避免重複記帳。按「取消」則表格保留不變。`}</p>` : ''}
       <div class="re-grid" style="margin-top:10px">
         <label class="field" style="grid-column:1/-1">活動名稱<input class="text-in" data-sp="name" value="${esc(sp.name)}" maxlength="30" placeholder="例如 週五打邊爐（可留空）" autocomplete="off"></label>
         <label class="field">日期<input class="text-in" type="date" data-sp="date" value="${sp.date}"></label>
@@ -2294,6 +2294,21 @@ spBody.addEventListener('click', e => {
   }
 });
 
+// 取消：一鍵清空新增支出頁（類別回到日常、日期回到今天、幣種回到 HKD），可於提示中復原
+$('#clearBtn').addEventListener('click', () => {
+  const snap = { section:S.section, item:S.item, date:S.date, cycle:S.cycle, cur:S.cur, rate:$('#fxRate').value, amount:$('#amount').value, remark:$('#remark').value, trip:S.trip, touched:S.tripTouched };
+  const dirty = snap.item || snap.amount || snap.remark || snap.section !== '日常' || snap.date !== todayStr() || snap.cur !== 'HKD';
+  document.activeElement?.blur(); kbUntil = 0; $('#p-input').style.paddingBottom = '';
+  if (!dirty) return toast('沒有需要清空的資料');
+  S.section = '日常'; S.item = null; S.cycle = 'M'; S.date = todayStr(); $('#amount').value = ''; $('#remark').value = '';
+  renderTabs(); renderDate(); setCur('HKD'); updHkd();
+  toast('已清空', 3200, { label:'復原', fn:() => {
+    S.section = snap.section; S.item = snap.item; S.cycle = snap.cycle; S.date = snap.date; renderTabs(); renderDate();
+    setCur(snap.cur); if (snap.cur !== 'HKD') $('#fxRate').value = snap.rate;
+    S.trip = snap.trip; S.tripTouched = snap.touched; renderTripRow();
+    $('#amount').value = snap.amount; $('#remark').value = snap.remark; updHkd(); toast('已復原');
+  } });
+});
 $('#aaBtn').addEventListener('click', () => {
   const cur = S.cur, rate = cur === 'HKD' ? 1 : parseFloat($('#fxRate').value), rm = cleanRemark();
   spFrom({ date:S.date, currency:cur, fxRate:rate, amt:num($('#amount').value), desc:rm, name:rm, sec:S.section, item:S.item, trip:S.section === '旅遊' ? S.trip : '', src:{ form:true } });
