@@ -46,6 +46,9 @@
 | + | 常用備註快選：每個 section+項目顯示最常用 3 個備註（localStorage `remarkLog`，從已載入月份及新增紀錄累積，上限 1500 筆） | ✅ |
 | + | 樂觀寫入：按「儲存」即寫入本機佇列並更新畫面（<0.1 秒），背景同步至 GAS；失敗保留佇列，於 online／回到前台／每 30 秒重試；未同步紀錄可直接刪除 | ✅ |
 | + | 選擇類別後，鍵盤彈出時自動向下捲，令「儲存支出」按鈕位於鍵盤上方（`visualViewport` resize + `keepSaveVisible()`；頁面太短時臨時加底部空白）；儲存後收起鍵盤並平滑捲回頂部；「已儲存」提示顯示項目＋金額（外幣附 ≈HK$，非今天附日期），顯示 3.2 秒；提示旁「復原」按鈕（↶ 圖示＋倒數圈，aria-label「復原」）：新紀錄於 `hold` 暫緩同步約 3.5 秒，復原即從佇列移除並把內容填回表格 | ✅ |
+| + | 本機資料快取（stale-while-revalidate）：每月紀錄（最多 8 個月）、固定項目、趨勢數據存於 localStorage `dataCache`；打開時即時顯示上次資料，背景更新（每項每次使用一次，`revalidate`），有改動才重畫，期間頂部顯示「更新中…」；寫入後經 `S.cache`（Proxy）刪除／`dropFixed()`／`dropSummary()`／`resetCache()` 同時刪除本機副本，下次直接取最新 | ✅ |
+| + | 預先載入：啟動 1.5 秒後載入上兩個月、固定項目及趨勢數據；切換月份時預取相鄰月份 | ✅ |
+| + | 效能記錄（設定頁「效能」卡）：每個請求的次數、中位及最慢時間、伺服器處理時間（Code.gs 回傳 `ms`）、快取命中次數；最近 300 筆存於 localStorage `perfLog` | ✅ |
 | + | 標題列右上角「同步」按鈕：送出本機佇列 → 清快取 → 重新讀取 Sheet；同步中圖示旋轉 | ✅ |
 | + | 同步健康狀態（設定頁）：待同步筆數、最後成功同步（localStorage `syncHealth`）、最近錯誤、伺服器版本（`API_VERSION`，前後端須一致）、最後備份時間 | ✅ |
 | + | 每週備份 `weeklyBackup()`：每週日 03:00 把所有工作表複製成新試算表至 Drive「記帳簿備份」，保留 8 份；只含資料不含程式及 TOKEN | ✅ |
@@ -93,7 +96,7 @@
 - GET `action=fixed` → `{rows}`
 - POST `add`（固定項目可帶 `cycle`）/ `updateRecord` / `deleteRecord` / `updateFixed`（可帶 `cycle`）/ `toggleFixed` / `saveItems`（`items` 為空即還原預設）/ `saveSettings`（值為空即刪除該鍵）/ `inbox`（Tasker，亦接受 form-urlencoded）/ `confirmInbox`（remember：auto／ask／空）/ `dismissInbox`（remember：ignore）/ `saveRule` / `deleteRule` / `saveTrip`（`oldName` 改名）/ `deleteTrip`（`untag` 一併清除紀錄標記）；`add`／`updateRecord` 可帶 `trip`
 - 手動函數：`setup`、`weeklyBackup`、`testSignal`
-- 所有請求需 `token`；寫入使用 `LockService`
+- 所有請求需 `token`；寫入使用 `LockService`；所有回應附 `ms`（伺服器處理毫秒）
 
 ## 部署步驟
 1. 新 Google Sheet → 擴充功能 → Apps Script → 貼上 Code.gs（毋須修改）
@@ -108,7 +111,7 @@
 ## 已知限制
 - 修改圖示／manifest 等靜態檔後，須把 `sw.js` 的 `VERSION` 加 1，否則手機會繼續用舊快取（index.html 不受影響）
 - 固定項目只從輸入月份的「下個月」起自動新增，補登過往月份不會回補
-- GAS 每次讀寫約 1–3 秒延遲
+- GAS 每次讀寫約 1–3 秒延遲（讀取已由本機快取遮蓋：第二次起打開約 20ms 顯示）
 
 ## 改進路線圖（已排定，按期執行）
 - ✅ 第 1 期：#1 TOKEN 改存指令碼屬性、#3 每週備份、#5 同步健康狀態

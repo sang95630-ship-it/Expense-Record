@@ -408,9 +408,11 @@ function write_(b) {
 }
 
 function handle_(p, fn) {
+  const t0 = Date.now();
   try {
     if (!p || p.token !== token_()) throw new Error('unauthorized');
-    return json_(Object.assign({ ok: true }, fn()));
+    const out = fn();
+    return json_(Object.assign({ ok: true }, out, { ms: Date.now() - t0 })); // ms：伺服器處理時間，供前端效能記錄
   } catch (err) {
     return json_({ ok: false, error: err.message });
   }

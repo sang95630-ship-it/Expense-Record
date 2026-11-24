@@ -457,6 +457,8 @@ a{color:inherit}
         <button class="primary" id="budSave" type="button">儲存預算</button>
         <p class="hint small" style="margin-top:8px">留空即不設預算。用量達 80% 及 100% 時，看門狗會經 Signal 提醒（09:00–22:00，每月各一次）。</p>
       </div>
+      <h2>效能</h2>
+      <div class="card" id="perfBox"></div>
       <h2>同步狀態</h2>
       <div class="card health" id="healthBox"></div>
       <h2>首次設定步驟</h2>
@@ -785,7 +787,7 @@ const dateLabel = s => { const [y,m,d] = s.split('-').map(Number); const w = '�
 let cfg = JSON.parse(localStorage.getItem('expenseCfg') || '{}');
 const S = { page:'input', section:'日常', item:null, cycle:'M', summary:null, trendN:12, srRange:12, searchRows:[],
   settings:(() => { try { return JSON.parse(localStorage.getItem('settingsCfg')) || {}; } catch(e){ return {}; } })(), date:todayStr(), expYm:todayStr().slice(0,7),
-  anYm:shiftYm(todayStr().slice(0,7),-1), anMode:'section', cache:{}, fixed:null, editing:null, cur:'HKD' };
+  anYm:shiftYm(todayStr().slice(0,7),-1), anMode:'section', cache:cacheProxy(), fixed:null, editing:null, cur:'HKD' };
 
 /* ---------- utils ---------- */
 let toastT;
@@ -811,21 +813,92 @@ function errMsg(e){
 }
 
 /* ---------- API ---------- */
+/* ---------- 效能記錄：每個請求的總時間及伺服器處理時間（j.ms，需 Code.gs 回傳） ---------- */
+const PERF_MAX = 300;
+let perfLog = (() => { try { return JSON.parse(localStorage.getItem('perfLog')) || []; } catch(e){ return []; } })();
+const perfHits = {}; // 本次使用期間的快取命中：action → {mem, disk}
+let perfSaveT;
+function perfNote(a, t, server, ok = true){
+  perfLog.push({ a, t:Math.round(t), s:server == null ? null : Math.round(server), ok, at:Date.now() });
+  if (perfLog.length > PERF_MAX) perfLog = perfLog.slice(-PERF_MAX);
+  clearTimeout(perfSaveT); perfSaveT = setTimeout(() => { try { localStorage.setItem('perfLog', JSON.stringify(perfLog)); } catch(e){} }, 500);
+}
+const perfHit = (a, kind) => { (perfHits[a] = perfHits[a] || { mem:0, disk:0 })[kind]++; };
 async function post(body){
   if (!cfg.url) throw new Error('noconfig');
-  const r = await fetch(cfg.url, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify({token:cfg.token, ...body}) });
-  const j = await r.json(); if (!j.ok) throw new Error(j.error || '寫入失敗'); return j;
+  const t0 = performance.now();
+  try {
+    const r = await fetch(cfg.url, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify({token:cfg.token, ...body}) });
+    const j = await r.json(); perfNote('POST ' + body.action, performance.now() - t0, j.ms, !!j.ok);
+    if (!j.ok) throw new Error(j.error || '寫入失敗'); return j;
+  } catch(e){ if (e instanceof TypeError) perfNote('POST ' + body.action, performance.now() - t0, null, false); throw e; }
 }
 async function get(params){
   if (!cfg.url) throw new Error('noconfig');
   const u = new URL(cfg.url);
   Object.entries({token:cfg.token, ...params}).forEach(([k,v]) => u.searchParams.set(k,v));
-  const r = await fetch(u); const j = await r.json(); if (!j.ok) throw new Error(j.error || '讀取失敗'); return j;
+  const t0 = performance.now();
+  try {
+    const r = await fetch(u); const j = await r.json(); perfNote(params.action, performance.now() - t0, j.ms, !!j.ok);
+    if (!j.ok) throw new Error(j.error || '讀取失敗'); return j;
+  } catch(e){ if (e instanceof TypeError) perfNote(params.action, performance.now() - t0, null, false); throw e; }
 }
-async function loadMonth(ym){ if (S.cache[ym]) return S.cache[ym]; const j = await get({action:'list', month:ym}); learnRemarks(j.rows); return (S.cache[ym] = j.rows); }
+
+/* ---------- 本機資料快取（stale-while-revalidate） ----------
+   每月紀錄、固定項目及趨勢數據存於 localStorage「dataCache」：
+   - 打開時先即時顯示上次資料，再於背景向伺服器更新（每項每次使用最多一次），有改動才重畫
+   - 寫入後（delete S.cache[ym]／dropFixed／dropSummary／resetCache）即時刪除對應的本機副本，下次讀取直接向伺服器取最新 */
+const DC_KEY = 'dataCache', DC_MONTHS = 8;
+let DC = (() => { try { return JSON.parse(localStorage.getItem(DC_KEY)) || {}; } catch(e){ return {}; } })();
+DC.m = DC.m || {};
+let dcSaveT;
+function dcSave(){ clearTimeout(dcSaveT); dcSaveT = setTimeout(() => {
+  const keys = Object.keys(DC.m).sort((a,b) => DC.m[b].at - DC.m[a].at); keys.slice(DC_MONTHS).forEach(k => delete DC.m[k]);
+  try { localStorage.setItem(DC_KEY, JSON.stringify(DC)); } catch(e){ DC = { m:{} }; try { localStorage.removeItem(DC_KEY); } catch(_){} }
+}, 300); }
+function cacheProxy(){ // 函數宣告（會提升）：S 初始化時已可使用
+  return new Proxy({}, {
+    set(t, ym, rows){ t[ym] = rows; DC.m[ym] = { at:Date.now(), rows }; dcSave(); return true; },
+    deleteProperty(t, ym){ delete t[ym]; delete DC.m[ym]; dcSave(); return true; }
+  });
+}
+function resetCache(){ S.cache = cacheProxy(); DC.m = {}; dcSave(); }
+function dropFixed(){ S.fixed = null; delete DC.fixed; dcSave(); }
+function dropSummary(){ S.summary = null; delete DC.summary; dcSave(); }
+function persistMonth(ym){ if (S.cache[ym]) { DC.m[ym] = { at:Date.now(), rows:S.cache[ym] }; dcSave(); } }
+const revalDone = new Set();
+let revalN = 0;
+// 背景更新：每個 key 每次使用最多一次；資料有改動才呼叫 apply 並重畫
+function revalidate(key, fetcher, apply, current){
+  if (revalDone.has(key) || !cfg.url) return; revalDone.add(key);
+  revalN++; updateSync();
+  fetcher().then(fresh => { if (JSON.stringify(fresh) !== JSON.stringify(current)) { apply(fresh); refresh(); } })
+    .catch(() => revalDone.delete(key)).finally(() => { revalN--; updateSync(); });
+}
+async function loadMonth(ym){
+  if (S.cache[ym]) { perfHit('list', 'mem'); return S.cache[ym]; }
+  const hit = DC.m[ym];
+  if (hit) {
+    perfHit('list', 'disk');
+    const rows = hit.rows; S.cache[ym] = rows;
+    revalidate('m:' + ym, () => get({action:'list', month:ym}).then(j => (learnRemarks(j.rows), j.rows)), fresh => { S.cache[ym] = fresh; }, rows);
+    return rows;
+  }
+  revalDone.add('m:' + ym); // 剛向伺服器取得，毋須再背景更新
+  const j = await get({action:'list', month:ym}); learnRemarks(j.rows); return (S.cache[ym] = j.rows);
+}
 // 伺服器資料 + 本機未同步紀錄（待同步者標示 pending）
 async function monthRows(ym){ const rows = await loadMonth(ym); return [...rows, ...getQ().filter(r => r.date.slice(0,7) === ym).map(r => ({...r, pending:true}))]; }
-async function loadFixed(){ if (S.fixed) return S.fixed; const j = await get({action:'fixed'}); return (S.fixed = j.rows); }
+async function loadFixed(){
+  if (S.fixed) { perfHit('fixed', 'mem'); return S.fixed; }
+  if (DC.fixed) {
+    perfHit('fixed', 'disk'); S.fixed = DC.fixed.rows;
+    revalidate('fixed', () => get({action:'fixed'}).then(j => j.rows), fresh => { S.fixed = fresh; DC.fixed = { at:Date.now(), rows:fresh }; dcSave(); }, S.fixed);
+    return S.fixed;
+  }
+  revalDone.add('fixed');
+  const j = await get({action:'fixed'}); DC.fixed = { at:Date.now(), rows:j.rows }; dcSave(); return (S.fixed = j.rows);
+}
 
 /* ---------- offline queue ---------- */
 const getQ = () => JSON.parse(localStorage.getItem('expenseQueue') || '[]');
@@ -847,7 +920,7 @@ const relTime = iso => {
 const hold = {}; // 剛儲存的紀錄暫緩同步（id → 到期時間），以便「復原」
 function updateSync(){
   const n = getQ().length;
-  $('#syncState').textContent = !n ? '' : syncErr ? `${n} 筆未同步（${syncErr}）` : flushing ? `同步中…（${n}）` : `${n} 筆待同步`;
+  $('#syncState').textContent = !n ? (revalN ? '更新中…' : '') : syncErr ? `${n} 筆未同步（${syncErr}）` : flushing ? `同步中…（${n}）` : `${n} 筆待同步`;
 }
 // 背景同步：逐筆送出，成功即從佇列移除（以 id 移除，避免與新增的紀錄互相覆蓋）
 async function flushQ(){
@@ -861,10 +934,10 @@ async function flushQ(){
       inFlight = r.id;
       try { await post({action:'add', ...r}); }
       catch(e){ syncErr = e.message === 'unauthorized' ? '密碼錯誤' : e instanceof TypeError ? '離線' : e.message; noteHealth(false, syncErr); break; }
-      setQ(getQ().filter(x => x.id !== r.id)); synced++; noteHealth(true); S.summary = null;
+      setQ(getQ().filter(x => x.id !== r.id)); synced++; noteHealth(true); dropSummary();
       const ym = r.date.slice(0,7);
-      if (S.cache[ym] && !S.cache[ym].some(x => x.id === r.id)) S.cache[ym].push({...r, createdAt:new Date().toISOString(), fixedId:r.section === '固定' ? 'pending' : ''});
-      if (r.section === '固定') S.fixed = null;
+      if (S.cache[ym] && !S.cache[ym].some(x => x.id === r.id)) { S.cache[ym].push({...r, createdAt:new Date().toISOString(), fixedId:r.section === '固定' ? 'pending' : ''}); persistMonth(ym); }
+      if (r.section === '固定') dropFixed();
     }
   } finally { inFlight = null; flushing = false; updateSync(); }
   if (synced && S.page !== 'input') refresh();
@@ -882,7 +955,7 @@ async function manualSync(){
     while (flushing) await new Promise(r => setTimeout(r, 200));
     syncErr = ''; await flushQ();
     const n = getQ().length;
-    S.cache = {}; S.fixed = null; S.summary = null; loadInbox(true);
+    resetCache(); dropFixed(); dropSummary(); loadInbox(true);
     if (n) toast(`${n} 筆未能同步（${syncErr || '請稍後再試'}）`);
     else {
       const j = await get({action:'info'}); noteHealth(true);
@@ -1229,7 +1302,8 @@ $('#dpOk').addEventListener('click', () => { S.date = `${tmp.y}-${pad(tmp.m)}-${
 $('#dpToday').addEventListener('click', () => { S.date = todayStr(); renderDate(); closePicker(); });
 
 /* ---------- expense page ---------- */
-$$('[data-exp]').forEach(b => b.addEventListener('click', () => { S.expYm = shiftYm(S.expYm, Number(b.dataset.exp)); renderExpense(); }));
+const prefetch = ym => setTimeout(() => loadMonth(ym).catch(() => {}), 600);
+$$('[data-exp]').forEach(b => b.addEventListener('click', () => { S.expYm = shiftYm(S.expYm, Number(b.dataset.exp)); renderExpense(); prefetch(shiftYm(S.expYm, Number(b.dataset.exp))); }));
 async function renderExpense(){
   $('#expMonth').textContent = ymLabel(S.expYm);
   const box = $('#expBody'); box.innerHTML = '<p class="muted">載入中…</p>';
@@ -1399,7 +1473,7 @@ $('#reSave').addEventListener('click', async () => {
   try {
     if (pend) setQ(getQ().map(x => x.id === r.id ? {...x, ...upd} : x));
     else {
-      await post({action:'updateRecord', id:r.id, ...upd}); S.summary = null;
+      await post({action:'updateRecord', id:r.id, ...upd}); dropSummary();
       delete S.cache[r.date.slice(0,7)]; delete S.cache[date.slice(0,7)];
     }
     const log = lsGet('remarkLog', {}); delete log[r.id]; lsSet('remarkLog', log);
@@ -1413,7 +1487,7 @@ $('#reDel').addEventListener('click', async () => {
   if (pend && inFlight === r.id) return toast('此紀錄正在同步，請稍後再刪除');
   if (!confirm(`刪除 ${r.date} 的「${r.item} ${showAmt(r)}」？`)) return;
   if (pend){ setQ(getQ().filter(x => x.id !== r.id)); closeRec(); toast('已刪除（未同步的紀錄）'); return refresh(); }
-  try { await post({action:'deleteRecord', id:r.id}); delete S.cache[r.date.slice(0,7)]; S.summary = null; closeRec(); toast('已刪除'); refresh(); }
+  try { await post({action:'deleteRecord', id:r.id}); delete S.cache[r.date.slice(0,7)]; dropSummary(); closeRec(); toast('已刪除'); refresh(); }
   catch(err){ toast(errMsg(err)); }
 });
 
@@ -1436,7 +1510,7 @@ $('#fxSave').addEventListener('click', async () => {
   if (!(amt > 0)) return toast('請輸入有效金額');
   try {
     await post({action:'updateFixed', id:f.id, amount:Math.round(amt*100)/100, remark:$('#fxName').value.trim(), applyThisMonth:$('#fxApply').checked, cycle:S.fxCycle});
-    S.fixed = null; if ($('#fxApply').checked) delete S.cache[todayStr().slice(0,7)];
+    dropFixed(); if ($('#fxApply').checked) delete S.cache[todayStr().slice(0,7)];
     closeFixed(); toast('已更新固定項目'); renderExpense();
   } catch(e){ toast(errMsg(e)); }
 });
@@ -1445,12 +1519,12 @@ $('#fxToggle').addEventListener('click', async () => {
   if (f.active && !confirm(`停用「${f.remark || f.item}」？下個月起不再自動入帳，過往紀錄會保留。`)) return;
   try {
     await post({action:'toggleFixed', id:f.id, active:!f.active});
-    S.fixed = null; closeFixed(); toast(f.active ? '已停用，下個月起不再自動入帳' : '已重新啟用'); renderExpense();
+    dropFixed(); closeFixed(); toast(f.active ? '已停用，下個月起不再自動入帳' : '已重新啟用'); renderExpense();
   } catch(e){ toast(errMsg(e)); }
 });
 
 /* ---------- analysis page ---------- */
-$$('[data-an]').forEach(b => b.addEventListener('click', () => { S.anYm = shiftYm(S.anYm, Number(b.dataset.an)); renderAnalysis(); }));
+$$('[data-an]').forEach(b => b.addEventListener('click', () => { S.anYm = shiftYm(S.anYm, Number(b.dataset.an)); renderAnalysis(); prefetch(shiftYm(S.anYm, -2)); }));
 function pieSvg(slices, total, colorOf){
   if (slices.length === 1) return `<svg class="pie" viewBox="0 0 220 220" role="img" aria-label="支出分佈"><circle cx="110" cy="110" r="100" fill="${colorOf(slices[0][0],0)}"/></svg>`;
   const R = 100, C = 110; let a = -Math.PI/2;
@@ -1513,10 +1587,16 @@ async function renderAnalysis(){
 
 /* ---------- 趨勢（區間彙總，取 24 個月以便計算同比） ---------- */
 async function loadSummary(){
-  if (S.summary) return S.summary;
-  const to = todayStr().slice(0,7);
-  const j = await get({action:'summary', from:shiftYm(to, -23), to});
-  return (S.summary = j.months || {});
+  if (S.summary) { perfHit('summary', 'mem'); return S.summary; }
+  const to = todayStr().slice(0,7), fetchIt = () => get({action:'summary', from:shiftYm(to, -23), to}).then(j => j.months || {});
+  const keep = d => { S.summary = d; DC.summary = { at:Date.now(), to, data:d }; dcSave(); };
+  if (DC.summary && DC.summary.to === to) {
+    perfHit('summary', 'disk'); S.summary = DC.summary.data;
+    revalidate('summary', fetchIt, keep, S.summary);
+    return S.summary;
+  }
+  revalDone.add('summary');
+  const d = await fetchIt(); keep(d); return d;
 }
 const STACK = ['固定','日常','其他','旅遊']; // 由下至上：固定支出作穩定底座
 const kfmt = n => n >= 1000 ? (n/1000).toFixed(n >= 10000 ? 0 : 1).replace(/\.0$/,'') + 'k' : String(Math.round(n));
@@ -1623,7 +1703,7 @@ $('#ibBody').addEventListener('click', async e => {
   try {
     if (b.dataset.act === 'ok'){
       const j = await post({action:'confirmInbox', id, section:f('section'), item:f('item'), remark:f('remark').trim(), remember:f('remember')});
-      delete S.cache[r.date.slice(0,7)]; S.summary = null; learnRemarks([{id, section:f('section'), item:j.item, remark:f('remark').trim(), createdAt:new Date().toISOString()}]);
+      delete S.cache[r.date.slice(0,7)]; dropSummary(); learnRemarks([{id, section:f('section'), item:j.item, remark:f('remark').trim(), createdAt:new Date().toISOString()}]);
       toast(`已入帳：${j.item} ${r.currency !== 'HKD' ? curMoney(r.origAmount, r.currency) : money(r.amount)}`);
     } else {
       const ign = !r.suggest?.generic && confirm(`以後也略過「${r.merchant}」？\n（例如已由固定項目入帳的電話費）`);
@@ -1718,7 +1798,7 @@ $('#tfSave').addEventListener('click', async () => {
   const btn = $('#tfSave'); btn.disabled = true;
   try {
     await post({action:'saveTrip', ...t, oldName:S.tfOld || t.name});
-    if (S.tfOld && S.tfOld !== t.name){ S.cache = {}; if (S.trip === S.tfOld) S.trip = t.name; }
+    if (S.tfOld && S.tfOld !== t.name){ resetCache(); if (S.trip === S.tfOld) S.trip = t.name; }
     toast(S.tfOld ? '已更新旅程' : '已新增旅程'); S.tfOld = ''; tfReset(); renderTrips();
   } catch(e){ toast(errMsg(e)); }
   btn.disabled = false;
@@ -1780,7 +1860,7 @@ function renderSettings(){
   $('#cfgStatus').innerHTML = cfg.sheetUrl
     ? `已連結。<a href="${esc(cfg.sheetUrl)}" target="_blank" rel="noopener">開啟 Google Sheet</a>${n ? `，${n} 筆支出待同步` : ''}`
     : '尚未連結。';
-  itLoad(IT.sec); renderBudget();
+  itLoad(IT.sec); renderBudget(); renderPerf();
   renderHealth();
 }
 /* ---------- 快選項目編輯 ---------- */
@@ -1854,6 +1934,26 @@ function syncSettings(){
   get({action:'settings'}).then(j => { S.settings = j.settings || {}; lsSet('settingsCfg', S.settings); if (S.page === 'expense') renderExpense(); }).catch(() => {});
 }
 
+/* ---------- 效能卡（設定頁） ---------- */
+const PERF_LABEL = { list:'每月紀錄', fixed:'固定項目', summary:'趨勢數據', settings:'預算設定', items:'快選項目', inbox:'待確認', trips:'旅程', info:'伺服器資訊', search:'搜尋', merchants:'商戶規則' };
+const median = a => { const b = [...a].sort((x,y) => x-y); return b.length ? b[Math.floor((b.length-1)/2)] : 0; };
+function renderPerf(){
+  const box = $('#perfBox'), by = {};
+  perfLog.filter(e => e.ok).forEach(e => (by[e.a] = by[e.a] || []).push(e));
+  const rows = Object.entries(by).sort((a,b) => median(b[1].map(e => e.t)) - median(a[1].map(e => e.t))).map(([a, list]) => {
+    const t = list.map(e => e.t), sv = list.filter(e => e.s != null).map(e => e.s), h = perfHits[a];
+    const name = a.startsWith('POST ') ? '寫入：' + a.slice(5) : (PERF_LABEL[a] || a);
+    return `<tr><td>${esc(name)}</td><td>${list.length}</td><td>${(median(t)/1000).toFixed(2)}</td><td>${(Math.max(...t)/1000).toFixed(2)}</td>
+      <td>${sv.length ? (median(sv)/1000).toFixed(2) : '—'}</td><td>${h ? h.mem + h.disk : 0}</td></tr>`;
+  }).join('');
+  const fails = perfLog.filter(e => !e.ok).length;
+  box.innerHTML = rows ? `<div style="overflow-x:auto"><table class="tbl"><tr><th>請求</th><th>次數</th><th>中位（秒）</th><th>最慢</th><th>伺服器</th><th>快取命中</th></tr>${rows}</table></div>
+    <p class="hint small" style="margin-top:8px">最近 ${perfLog.length} 個請求${fails ? `，${fails} 個失敗` : ''}。「伺服器」為 Apps Script 處理時間，其餘為網絡及轉址；「快取命中」為本次使用期間不用等待伺服器的次數。</p>
+    <button class="ghost" id="perfClear" type="button" style="margin-top:6px">清除記錄</button>`
+    : '<p class="muted small">未有記錄。使用一段時間後再查看。</p>';
+}
+$('#perfBox').addEventListener('click', e => { if (e.target.id === 'perfClear'){ perfLog = []; try { localStorage.removeItem('perfLog'); } catch(_){} renderPerf(); } });
+
 async function renderHealth(){
   const box = $('#healthBox'), h = lsGet('syncHealth', {}), n = getQ().length;
   const row = (k, v, cls = '') => `<dt>${k}</dt><dd class="${cls}">${v}</dd>`;
@@ -1883,7 +1983,7 @@ $('#cfgSave').addEventListener('click', async () => {
   try {
     const j = await get({action:'info'});
     cfg.sheetUrl = j.sheetUrl; localStorage.setItem('expenseCfg', JSON.stringify(cfg));
-    S.cache = {}; S.fixed = null; toast('已連結 Google Sheet'); flushQ(); go('input');
+    resetCache(); dropFixed(); toast('已連結 Google Sheet'); flushQ(); go('input');
   } catch(e){ cfg = old; toast('連結失敗：' + errMsg(e)); }
   btn.disabled = false;
 });
@@ -1899,7 +1999,8 @@ if (!cfg.url) go('settings'); else {
   if (!applyLaunchParams()) go('input');
   flushQ(); syncItems(); syncSettings(); loadInbox(true); syncTrips();
   // 閒置時預載上兩個月（分析頁預設及環比用），同時累積常用備註
-  setTimeout(() => { const m = todayStr().slice(0,7); [1,2].forEach(k => loadMonth(shiftYm(m,-k)).catch(() => {})); }, 2000);
+  // 預先載入：分析頁（上月及前月）、支出概覽的固定項目、趨勢數據；大多由本機快取即時取得，背景再更新
+  setTimeout(() => { const m = todayStr().slice(0,7); [1,2].forEach(k => loadMonth(shiftYm(m,-k)).catch(() => {})); loadFixed().catch(() => {}); loadSummary().catch(() => {}); }, 1500);
 }
 </script>
 </body>
