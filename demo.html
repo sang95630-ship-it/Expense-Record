@@ -1908,7 +1908,7 @@ const spUnit = c => { try { return 10 ** new Intl.NumberFormat('en', {style:'cur
 const spMoney = (minor, unit, c) => c === 'HKD' ? money(minor / unit) : curMoney(minor / unit, c);
 const spDefItem = sec => { const names = (SECTIONS[sec] || []).map(x => x[0]), pref = {旅遊:'餐飲', 日常:'晚餐'}[sec]; return names.includes(pref) ? pref : names[0] || ''; };
 const spClone = sp => JSON.parse(JSON.stringify(sp));
-function spNewExp(sp){ const sec = sp.trip ? '旅遊' : '日常'; return { id:uid().replace(/-/g,'').slice(0,8), desc:'', amt:'', payer:ME, mode:'eq', inc:{}, w:{}, x:{}, sec, item:spDefItem(sec) }; }
+function spNewExp(sp){ const sec = sp.trip ? '旅遊' : '日常'; return { id:uid().replace(/-/g,'').slice(0,8), desc:'', amt:'', payer:sp.data.people.includes(ME) ? ME : sp.data.people[0] || '', mode:'eq', inc:{}, w:{}, x:{}, sec, item:spDefItem(sec) }; }
 function spNew(){
   const sp = { id:'sp' + uid().replace(/-/g,'').slice(0,12), name:'', date:todayStr(), currency:'HKD', fxRate:1, trip:'', status:'open', settledAt:'', data:{ people:[ME], expenses:[], done:{} } };
   sp.data.expenses.push(spNewExp(sp)); return sp;
@@ -1932,21 +1932,42 @@ function spShares(e, P, unit, cur){
   P.forEach((p,i) => share[p] = fl[i]);
   return { T, share };
 }
-// 整個活動：已付／應付／差額＋建議轉帳（貪婪配對，最多 n−1 筆）
+// 最少轉帳：把差額分成最多個「加總為 0」的組，每組 k 人需要 k−1 筆，總數 = 人數 − 組數（已證明為最少）。
+// 以子集 DP 求最多組數（2^n，最多 16 位有差額的人；更多時改用貪婪，最多 n−1 筆）；組內以貪婪配對
+function spMinTx(items){ // items: [{p, a}]，a 為差額（正＝應收，負＝應付）
+  const n = items.length, greedy = list => {
+    const cr = list.filter(x => x.a > 0).map(x => ({p:x.p, a:x.a})).sort((a,b) => b.a - a.a);
+    const db = list.filter(x => x.a < 0).map(x => ({p:x.p, a:-x.a})).sort((a,b) => b.a - a.a);
+    const tx = []; let i = 0, j = 0;
+    while (i < db.length && j < cr.length){
+      const a = Math.min(db[i].a, cr[j].a); tx.push({ from:db[i].p, to:cr[j].p, amt:a });
+      db[i].a -= a; cr[j].a -= a; if (!db[i].a) i++; if (!cr[j].a) j++;
+    }
+    return tx;
+  };
+  if (n <= 2 || n > 16) return { tx:greedy(items), optimal:n <= 2 };
+  const F = 1 << n, sm = new Float64Array(F), dp = new Int8Array(F);
+  for (let m = 1; m < F; m++){ const lb = m & -m; sm[m] = sm[m ^ lb] + items[31 - Math.clz32(lb)].a; }
+  for (let m = 1; m < F; m++){
+    let best = 0; for (let i = 0; i < n; i++) if (m >> i & 1){ const v = dp[m ^ (1 << i)]; if (v > best) best = v; }
+    dp[m] = best + (sm[m] === 0 ? 1 : 0);
+  }
+  // 還原：逆向取出次序，前綴加總為 0 處即分組
+  const seq = []; let m = F - 1;
+  while (m){ for (let i = 0; i < n; i++) if (m >> i & 1 && dp[m ^ (1 << i)] + (sm[m] === 0 ? 1 : 0) === dp[m]){ seq.unshift(i); m ^= 1 << i; break; } }
+  const tx = []; let grp = [], acc = 0;
+  seq.forEach(i => { grp.push(items[i]); acc += items[i].a; if (acc === 0){ tx.push(...greedy(grp)); grp = []; } });
+  return { tx, optimal:true };
+}
+// 整個活動：已付／應付／差額＋建議轉帳（最少轉帳次數）
 function spCalc(sp){
   const unit = spUnit(sp.currency), P = sp.data.people, paid = {}, owe = {};
   P.forEach(p => { paid[p] = 0; owe[p] = 0; });
   const per = sp.data.expenses.map(e => { const r = spShares(e, P, unit, sp.currency); if (!r.err){ paid[e.payer] += r.T; P.forEach(p => owe[p] += r.share[p]); } return r; });
   const net = Object.fromEntries(P.map(p => [p, paid[p] - owe[p]]));
-  const cr = P.filter(p => net[p] > 0).map(p => ({p, a:net[p]})).sort((a,b) => b.a - a.a);
-  const db = P.filter(p => net[p] < 0).map(p => ({p, a:-net[p]})).sort((a,b) => b.a - a.a);
-  const tx = []; let i = 0, j = 0;
-  while (i < db.length && j < cr.length){
-    const a = Math.min(db[i].a, cr[j].a); tx.push({ from:db[i].p, to:cr[j].p, amt:a });
-    db[i].a -= a; cr[j].a -= a; if (!db[i].a) i++; if (!cr[j].a) j++;
-  }
+  const mt = spMinTx(P.filter(p => net[p]).map(p => ({p, a:net[p]}))), tx = mt.tx;
   tx.forEach(t => t.done = !!sp.data.done[`${t.from}|${t.to}|${t.amt}`]);
-  return { unit, paid, owe, net, per, tx, total:per.reduce((a,r) => a + (r.err ? 0 : r.T), 0), errs:per.filter(r => r.err) };
+  return { unit, paid, owe, net, per, tx, optimal:mt.optimal, total:per.reduce((a,r) => a + (r.err ? 0 : r.T), 0), errs:per.filter(r => r.err) };
 }
 // 我的份額 → 記帳簿紀錄（每筆支出一筆）
 function spRecords(sp, c){
@@ -2016,7 +2037,7 @@ function renderSplits(){
       <div class="trip-head"><div><b>${esc(sp.name)}</b><span class="sp-st ${st}">${SP_ST[st]}</span>
         <div class="sub muted small">${sp.date.slice(5).replace('-','/')}，${sp.data.people.length} 人，${sp.data.expenses.length} 筆${sp.trip ? `，${esc(sp.trip)}` : ''}${pend[sp.id] ? '，待同步' : ''}</div></div>
         <span class="num sp-total">${M(c.total)}</span></div>
-      <div class="muted small">我的份額 ${M(c.owe[ME] || 0)}${cur !== 'HKD' ? `（≈ ${money(round2((c.owe[ME] || 0) / u * rate))}）` : ''}</div>
+      <div class="muted small">${sp.data.people.includes(ME) ? `我的份額 ${M(c.owe[ME] || 0)}${cur !== 'HKD' ? `（≈ ${money(round2((c.owe[ME] || 0) / u * rate))}）` : ''}` : '計算工具（我沒有參與，不入帳）'}</div>
       ${open.length ? `<div class="sp-open">${open.map(t => spTxHtml(t, M, sp.id)).join('')}</div>` : ''}
     </div>`;
   }).join('');
@@ -2025,7 +2046,7 @@ function renderSplits(){
       <div><div class="muted small">AA 待收</div><div class="total">${money(round2(due))}</div></div>
       <div><div class="muted small">待付</div><div class="delta">${money(round2(owe))}</div></div></div>
       <p class="hint small" style="margin-top:6px">待收／待付不計入支出；記帳簿只記錄你的份額。</p></div>` : ''}
-    <div style="margin-top:12px">${cards || `<div class="card"><p class="muted">未有分帳。<br>一人先付全數：新增分帳 → 加入朋友 → 輸入金額。<br>多人各付不同項目：每筆支出選擇付款人，最後合併計算最少轉帳。</p></div>`}</div>`;
+    <div style="margin-top:12px">${cards || `<div class="card"><p class="muted">未有分帳。<br>一人先付全數：新增分帳 → 加入朋友 → 輸入金額。<br>多人各付不同項目：每筆支出選擇付款人，最後合併計算最少轉帳。<br>朋友之間分帳（你沒有參與）：移除「我」即成計算工具，不會入帳。</p></div>`}</div>`;
   if (!S.spLoaded && cfg.url){ S.spLoaded = true; const before = JSON.stringify(S.splits); syncSplits().then(() => { if (S.page === 'splits' && !S.spEdit && JSON.stringify(S.splits) !== before) renderSplits(); }); }
 }
 const SP_SECS = ['旅遊','日常','其他'];
@@ -2041,7 +2062,7 @@ function spExpHtml(sp, e, i){
     <div class="re-grid" style="margin-top:10px">
       <label class="field" style="grid-column:1/-1">內容（可留空）<input class="text-in" data-spe="${i}" data-k="desc" value="${esc(e.desc)}" maxlength="30" placeholder="例如 晚餐、的士、酒店" autocomplete="off"></label>
       <label class="field">金額（${esc(CUR[sp.currency]?.[1] || sp.currency)}）<input class="text-in sp-amt" data-spe="${i}" data-k="amt" inputmode="decimal" value="${esc(e.amt)}" placeholder="0" autocomplete="off"></label>
-      <label class="field">付款人<select class="text-in" data-spe="${i}" data-k="payer">${P.map(p => `<option${p === e.payer ? ' selected' : ''}>${esc(p)}</option>`).join('')}</select></label>
+      <label class="field">付款人<select class="text-in" data-spe="${i}" data-k="payer">${P.includes(e.payer) ? '' : '<option value="" selected>選擇付款人</option>'}${P.map(p => `<option${p === e.payer ? ' selected' : ''}>${esc(p)}</option>`).join('')}</select></label>
     </div>
     <div class="seg full" data-spmode="${i}">${[['eq','平均'],['w','按份數'],['x','指定金額']].map(([k,l]) => `<button type="button" data-m="${k}" class="${e.mode === k ? 'active' : ''}">${l}</button>`).join('')}</div>
     <div class="${e.mode === 'eq' ? 'sp-chips' : 'sp-rows'}">${per}</div>
@@ -2055,7 +2076,7 @@ function spExpHtml(sp, e, i){
 function spSuggest(P){
   const m = lsGet('splitPeople', {}), base = spPeopleList();
   const extra = Object.keys(m).filter(n => !base.includes(n)).sort((a,b) => m[b] - m[a]);
-  return [...base, ...extra].filter(n => n !== ME && !P.includes(n)).slice(0, 14);
+  return [...(P.includes(ME) ? [] : [ME]), ...[...base, ...extra].filter(n => n !== ME && !P.includes(n))].slice(0, 15);
 }
 // 以現有資料開新分帳（新增支出頁、待確認通知、現有紀錄）；src 記錄來源，儲存時取代原本的全額紀錄／標記通知
 function spFrom(o){
@@ -2094,7 +2115,8 @@ function spRenderEd(){
     </div>
     <div class="card" style="margin-top:12px">
       <strong>參加者（${P.length} 人）</strong>
-      <div class="sp-chips">${P.map(p => `<span class="sp-chip on">${esc(p)}${p === ME ? '' : `<button type="button" class="x" data-sprm="${esc(p)}" aria-label="移除 ${esc(p)}">×</button>`}</span>`).join('')}</div>
+      ${P.includes(ME) ? '' : '<p class="hint small sp-src">計算工具模式：你沒有參與，只計算最少轉帳次數，不會寫入記帳簿。</p>'}
+      <div class="sp-chips">${P.map(p => `<span class="sp-chip on">${esc(p)}${p === ME && sp.data.src ? '' : `<button type="button" class="x" data-sprm="${esc(p)}" aria-label="移除 ${esc(p)}">×</button>`}</span>`).join('')}</div>
       <div class="sp-add"><input class="text-in" id="spNewP" maxlength="12" placeholder="輸入名字" autocomplete="off" enterkeyhint="done"><button class="ghost" type="button" id="spAddP">加入</button></div>
       ${sugg.length ? `<div class="sp-chips"><span class="muted small">常用：</span>${sugg.map(nm => `<button type="button" class="sp-chip" data-spadd="${esc(nm)}">＋ ${esc(nm)}</button>`).join('')}</div>` : ''}
     </div>
@@ -2116,14 +2138,14 @@ function spRenderRes(){
     if (r.err){ h.className = 'hint small st-warn-t'; h.textContent = r.err; return; }
     const k = P.filter(p => r.share[p] > 0).length, mine = r.share[ME];
     h.className = 'hint small';
-    h.textContent = `${k} 人分攤` + (mine > 0 ? `，我的份額 ${M(mine)}${hk(mine)}，記入 ${e.sec}·${e.item}` : '，我不用分攤（不會入帳）');
+    h.textContent = `${k} 人分攤` + (!sp.data.people.includes(ME) ? '' : mine > 0 ? `，我的份額 ${M(mine)}${hk(mine)}，記入 ${e.sec}·${e.item}` : '，我不用分攤（不會入帳）');
   });
   $('#spRes').innerHTML = `<strong>結算</strong>
     <div class="muted small" style="margin:4px 0 8px">合計 ${M(c.total)}${hk(c.total)}${c.errs.length ? `，${c.errs.length} 筆支出未完成` : ''}</div>
     <table class="sp-tbl"><thead><tr><th>參加者</th><th>已付</th><th>應付</th><th>差額</th></tr></thead><tbody>
     ${P.map(p => `<tr><td>${esc(p)}</td><td>${M(c.paid[p])}</td><td>${M(c.owe[p])}</td><td class="${c.net[p] > 0 ? 'st-ok-t' : c.net[p] < 0 ? 'st-warn-t' : ''}">${c.net[p] > 0 ? '收 ' : c.net[p] < 0 ? '付 ' : ''}${M(Math.abs(c.net[p]))}</td></tr>`).join('')}
     </tbody></table>
-    <div class="sp-sub">建議轉帳（${c.tx.length} 筆）</div>
+    <div class="sp-sub">建議轉帳（${c.tx.length} 筆${c.tx.length > 1 && c.optimal ? '，已是最少次數' : ''}）</div>
     ${c.tx.length ? c.tx.map(t => spTxHtml(t, M)).join('') : '<p class="muted small">不需要轉帳。</p>'}`;
 }
 function spText(sp, c){
@@ -2154,14 +2176,15 @@ function spAddPerson(name, focus){
   const P = S.spEdit.data.people; name = String(name || '').trim().slice(0, 12);
   if (!name) return;
   if (P.includes(name)) return toast('已有同名參加者');
-  P.push(name); spRenderEd(); if (focus) $('#spNewP').focus();
+  if (name === ME) P.unshift(ME); else P.push(name);
+  spRenderEd(); if (focus) $('#spNewP').focus();
 }
 async function spSave(copy){
   const sp = S.spEdit;
   sp.name = sp.name.trim() || `分帳 ${sp.date.slice(5).replace('-','/')}`;
   if (sp.data.expenses.length > 1) sp.data.expenses = sp.data.expenses.filter(e => String(e.amt).trim() || e.desc.trim()); // 剔除空白支出
   const c = spCalc(sp);
-  const err = sp.data.people.length < 2 ? '請加入最少一位參加者' : !sp.data.expenses.length ? '請輸入支出' : c.errs.length ? `支出未完成：${c.errs[0].err}`
+  const err = sp.data.people.length < 2 ? '最少需要 2 位參加者' : !sp.data.expenses.length ? '請輸入支出' : c.errs.length ? `支出未完成：${c.errs[0].err}`
     : sp.currency !== 'HKD' && !(sp.fxRate > 0) ? '請輸入有效匯率' : '';
   if (err){ spRenderEd(); return toast(err); }
   const first = sp.status === 'open' && copy;
@@ -2228,8 +2251,9 @@ spBody.addEventListener('click', e => {
   if (b.dataset.sprm){
     const p = b.dataset.sprm; sp.data.people = sp.data.people.filter(x => x !== p);
     let moved = false;
-    sp.data.expenses.forEach(x => { if (x.payer === p){ x.payer = ME; moved = true; } delete x.inc[p]; delete x.w[p]; delete x.x[p]; });
-    spRenderEd(); if (moved) toast(`${p} 付款的支出已改為「我」付，請檢查`); return;
+    const to = sp.data.people[0] || '';
+    sp.data.expenses.forEach(x => { if (x.payer === p){ x.payer = to; moved = true; } delete x.inc[p]; delete x.w[p]; delete x.x[p]; });
+    spRenderEd(); if (moved) toast(to ? `${p} 付款的支出已改為「${to}」付，請檢查` : '請加入參加者並選擇付款人'); return;
   }
   if (b.id === 'spAddE'){ sp.data.expenses.push(spNewExp(sp)); spRenderEd(); const cards = $$('#spBody .sp-exp'); cards[cards.length - 1]?.scrollIntoView({ behavior:'smooth', block:'center' }); return; }
   if (b.dataset.sprme !== undefined){ sp.data.expenses.splice(+b.dataset.sprme, 1); return spRenderEd(); }
