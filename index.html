@@ -1045,7 +1045,8 @@ async function renderExpense(){
     let html = `<div class="card${Object.keys(bud).some(k => k !== 'total') ? ' has-bud' : ''}"><div class="muted small">本月合計 ${money(total)}（${rows.length} 筆）</div>
       <div class="split2"><div><div class="muted small">可控消費</div><div class="t2">${money(round2(varTotal))}</div></div>
         <div><div class="muted small">固定支出</div><div class="t2 dim">${money(round2(fixTotal))}</div></div></div>
-      ${bud.total ? budLine(total, bud.total) : ''}${S.expYm === todayStr().slice(0,7) ? projHtml(varRows, varTotal, fixTotal, bud.total) : ''}
+      ${bud.var ? budLine(varTotal, bud.var, '可控預算') : ''}${bud.total ? budLine(total, bud.total, '總預算') : ''}
+      ${S.expYm === todayStr().slice(0,7) ? projHtml(varRows, varTotal, fixTotal, bud.total, bud.var) : ''}
       ${bySec.map(([s,v]) => { const b = bud[s], st = budStat(v, b);
         return `<div class="bar-row"><span>${s}</span><span class="bar"><i class="${st}" style="width:${Math.min(100, b ? v/b*100 : v/max*100)}%"></i></span>
         <span class="num">${money(v)}${b ? `<small> / ${money(b)}${st === 'over' ? ' ⛔' : st === 'warn' ? ' ⚠️' : ''}</small>` : ''}</span></div>`; }).join('')}</div>`;
@@ -1126,22 +1127,25 @@ function weekGroups(rows, showFix){
 }
 
 /* ---------- 預算及月底預測 ---------- */
-function budgets(){ const o = {}; ['total', ...ORDER].forEach(k => { const v = Number(S.settings['budget.'+k]); if (v > 0) o[k] = v; }); return o; }
+function budgets(){ const o = {}; ['total', 'var', ...ORDER].forEach(k => { const v = Number(S.settings['budget.'+k]); if (v > 0) o[k] = v; }); return o; }
 const budStat = (used, b) => !b ? '' : used >= b ? 'over' : used >= b*0.8 ? 'warn' : 'ok';
-function budLine(used, b){
+function budLine(used, b, name = '總預算'){
   const st = budStat(used, b), pct = Math.round(used/b*100);
-  const label = st === 'over' ? `⛔ 超出總預算 ${money(round2(used-b))}` : st === 'warn' ? `⚠️ 接近總預算，剩 ${money(round2(b-used))}` : `✓ 總預算內，剩 ${money(round2(b-used))}`;
+  const label = st === 'over' ? `⛔ 超出${name} ${money(round2(used-b))}` : st === 'warn' ? `⚠️ 接近${name}，剩 ${money(round2(b-used))}` : `✓ ${name}內，剩 ${money(round2(b-used))}`;
   return `<span class="bar big"><i class="${st}" style="width:${Math.min(100, used/b*100)}%"></i></span>
-    <div class="bud-line ${st}"><span>${label}</span><span class="num muted">${pct}%／總預算 ${money(b)}</span></div>`;
+    <div class="bud-line ${st}"><span>${label}</span><span class="num muted">${pct}%／${name} ${money(b)}</span></div>`;
 }
 // 月底預測：固定及旅遊按實數（不外推）；日常＋其他按已過日數的日均外推至整月
 // 月底預測（只計可控消費）：旅遊按實數；日常＋其他按日均外推。與總預算比較時加回固定支出
-function projHtml(varRows, varTotal, fixTotal, budTotal){
+function projHtml(varRows, varTotal, fixTotal, budTotal, budVar){
   const now = new Date(), day = now.getDate(), dim = daysIn(now.getFullYear(), now.getMonth()+1);
   if (day < 3) return '<p class="small muted" style="margin:10px 0 4px">第 3 日起顯示月底預測。</p>';
   const trip = sum(varRows.filter(r => r.section === '旅遊')), daily = (varTotal - trip) / day;
   const proj = Math.round(trip + daily * dim), all = proj + Math.round(fixTotal);
-  const vs = !budTotal ? '' : all > budTotal ? `<div class="small st-warn-t">⚠️ 連固定支出 ${money(all)}，按此速度將超出總預算 ${money(all - budTotal)}</div>`
+  // 有可控預算時以它為準（直接比較可控消費預測）；否則與總預算比較（加回固定支出）
+  const vs = budVar ? (proj > budVar ? `<div class="small st-warn-t">⚠️ 按此速度將超出可控預算 ${money(proj - budVar)}</div>`
+      : `<div class="small st-ok-t">✓ 預計月底可控預算仍剩 ${money(budVar - proj)}</div>`)
+    : !budTotal ? '' : all > budTotal ? `<div class="small st-warn-t">⚠️ 連固定支出 ${money(all)}，按此速度將超出總預算 ${money(all - budTotal)}</div>`
     : `<div class="small st-ok-t">✓ 連固定支出 ${money(all)}，預計月底仍剩 ${money(budTotal - all)}</div>`;
   return `<div class="proj"><span class="muted small">可控消費預計月底</span> <b class="num">${money(proj)}</b>
     <div class="small muted">日常＋其他日均 ${money(round2(daily))} × ${dim} 日，另加旅遊實數</div>${vs}</div>`;
@@ -1632,7 +1636,8 @@ function syncItems(){
 
 /* ---------- 預算設定 ---------- */
 function renderBudget(){
-  $('#budBox').innerHTML = ['total', ...ORDER].map(k => `<label for="bud-${k}">${k === 'total' ? '<b>每月總預算</b>' : k}</label>
+  const BUD_LABEL = { var:'<b>可控消費預算</b><br><small class="muted">日常＋旅遊＋其他</small>', total:'每月總預算<br><small class="muted">含固定支出</small>' };
+  $('#budBox').innerHTML = ['var', 'total', ...ORDER.filter(k => k !== '固定' || S.settings['budget.固定'])].map(k => `<label for="bud-${k}">${BUD_LABEL[k] || k}</label>
     <input class="text-in" id="bud-${k}" data-bud="${k}" type="text" inputmode="decimal" placeholder="不設" value="${S.settings['budget.'+k] ? withCommas(S.settings['budget.'+k]) : ''}">`).join('');
 }
 $('#budBox').addEventListener('input', e => { if (e.target.dataset.bud) fmtAmountInput(e.target); });

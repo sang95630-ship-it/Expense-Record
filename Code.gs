@@ -113,6 +113,7 @@ function budgetCheck_(ym) {
   if (!budgets.length) return;
   const spent = { total: 0 };
   rows_(REC).forEach(r => { if (r[0] && ym_(r[1]) === ym) { spent[r[2]] = (spent[r[2]] || 0) + Number(r[4]); spent.total += Number(r[4]); } });
+  spent.var = spent.total - (spent['固定'] || 0); // 可控消費 = 日常＋旅遊＋其他
   const p = props_(), done = JSON.parse(p.getProperty('BUDGET_SENT') || '{}');
   Object.keys(done).forEach(k => { if (k.indexOf(ym) < 0) delete done[k]; }); // 只保留本月
   budgets.forEach(k => {
@@ -122,7 +123,7 @@ function budgetCheck_(ym) {
       const key = `${sec}|${ym}|${th}`;
       if (!done[key]) {
         done[key] = 1; if (th === 1) done[`${sec}|${ym}|0.8`] = 1;
-        notify_(`${th === 1 ? '⛔' : '⚠️'} 記帳簿：${sec === 'total' ? '總支出' : sec}本月已用 HK$ ${Math.round(used).toLocaleString('en-US')}／預算 HK$ ${b.toLocaleString('en-US')}（${Math.round(pct * 100)}%）`);
+        notify_(`${th === 1 ? '⛔' : '⚠️'} 記帳簿：${sec === 'total' ? '總支出' : sec === 'var' ? '可控消費' : sec}本月已用 HK$ ${Math.round(used).toLocaleString('en-US')}／預算 HK$ ${b.toLocaleString('en-US')}（${Math.round(pct * 100)}%）`);
       }
       return true;
     });
