@@ -76,6 +76,14 @@
   jp(10, '酒店', 68000, '新宿酒店 4 晚'); jp(10, '交通', 3200, '機場快線'); jp(11, '餐飲', 4800, '壽司'); jp(11, '門票', 3600, '展覽館');
   jp(12, '購物', 15800, '電器'); jp(12, '餐飲', 2900, '拉麵'); jp(13, '餐飲', 6200, '燒肉'); jp(13, '交通', 1800, '地鐵'); jp(14, '購物', 8400, '手信');
 
+  // 分帳：上星期五打邊爐（我先付，已結算，阿明已還）
+  const spD = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 3), spDate = ymd(spD);
+  const SPLITS = [{ id: 'spdemo1', name: '週五打邊爐', date: spDate, currency: 'HKD', fxRate: 1, trip: '', status: 'settled',
+    settledAt: new Date(Date.now() - 2 * 864e5).toISOString(), updatedAt: new Date(Date.now() - 2 * 864e5).toISOString(),
+    data: { people: ['我', '阿明', '小美', '阿傑'], done: { '阿明|我|32000': true }, unit: 100,
+      expenses: [{ id: 'e1', desc: '火鍋', amt: '1,280', payer: '我', mode: 'eq', inc: {}, w: {}, x: {}, sec: '日常', item: '晚餐' }],
+      transfers: [{ from: '阿明', to: '我', amt: 32000, done: true }, { from: '小美', to: '我', amt: 32000, done: false }, { from: '阿傑', to: '我', amt: 32000, done: false }] } }];
+  add(spDate, '日常', '晚餐', 320, 'AA：週五打邊爐·火鍋', { id: 'spdemo1_e1', splitId: 'spdemo1' });
   const ITEMS = {};
   const SETTINGS = { 'budget.var': 6500, 'budget.total': 9000 };
   const hh = h => new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, 12).toISOString();
@@ -91,7 +99,8 @@
   // ---- 模擬 API ----
   const get = p => {
     switch (p.action) {
-      case 'info': return { sheetUrl: '', version: 7, lastBackup: new Date(Date.now() - 2 * 864e5).toISOString(), serverTime: new Date().toISOString(), signal: false, lastWatchdog: new Date(Date.now() - 20 * 60000).toISOString(), notifyQueue: 0 };
+      case 'splits': return { rows: SPLITS };
+      case 'info': return { sheetUrl: '', version: 8, lastBackup: new Date(Date.now() - 2 * 864e5).toISOString(), serverTime: new Date().toISOString(), signal: false, lastWatchdog: new Date(Date.now() - 20 * 60000).toISOString(), notifyQueue: 0 };
       case 'list': return { rows: R.filter(r => r.date.slice(0, 7) === p.month) };
       case 'fixed': return { rows: FIXED };
       case 'items': return { items: ITEMS };
@@ -162,6 +171,19 @@
         const v = { name: b.name, start: b.start, end: b.end, currency: b.currency || '', note: '' };
         if (t) Object.assign(t, v); else TRIPS.push(v);
         if (old !== b.name) R.forEach(r => { if (r.trip === old) r.trip = b.name; });
+        return {};
+      }
+      case 'saveSplit': {
+        const sp = b.split, i = SPLITS.findIndex(x => x.id === sp.id);
+        if (i >= 0) SPLITS[i] = sp; else SPLITS.push(sp);
+        const want = Object.fromEntries((b.records || []).map(x => [x.id, x]));
+        for (let k = R.length - 1; k >= 0; k--) { const r = R[k]; if (r.splitId !== sp.id) continue; if (!want[r.id]) R.splice(k, 1); else { Object.assign(r, want[r.id]); delete want[r.id]; } }
+        Object.values(want).forEach(x => R.push({ ...x, createdAt: new Date().toISOString(), fixedId: '', splitId: sp.id }));
+        return {};
+      }
+      case 'deleteSplit': {
+        const i = SPLITS.findIndex(x => x.id === b.id); if (i >= 0) SPLITS.splice(i, 1);
+        for (let k = R.length - 1; k >= 0; k--) if (R[k].splitId === b.id) R.splice(k, 1);
         return {};
       }
       case 'deleteTrip': { const i = TRIPS.findIndex(x => x.name === b.name); if (i >= 0) TRIPS.splice(i, 1); return {}; }

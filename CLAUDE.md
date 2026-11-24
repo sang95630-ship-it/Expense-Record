@@ -67,6 +67,7 @@
 | + | 圖表色盤：dataviz 參考色盤（已驗證色盲及對比），`PAL_L`／`PAL_D`；類別色固定跟隨類別（`secColor`），不跟排名 | ✅ |
 | + | 通知自動記帳（第 5 期）：Tasker 轉發銀行短訊（見 `TASKER.md`）→ `action=inbox`；`PARSERS` 支援中銀信用卡、中銀戶口自動轉賬、花旗、安信、中國移動繳費；外幣以 open.er-api.com 換算（`fxRate_`，快取 6 小時）；`Merchants` 規則 auto／ask／ignore，商戶名互相包含（≥6 字元）即配對（應付不同卡截短）；支付平台（`GENERIC`：Alipay／WeChat Pay／PayMe 等）必須逐筆確認、不建規則；項目 `@meal` 按交易時間判斷早（05–11）／午（11–16）／晚（17–23）餐，其餘零食；同 HKD 金額 15 分鐘內不同短訊標示可能重複且不自動入帳；Signal：✅ 已入帳／🔔 待確認；前端「📥 待確認」頁（badge＋新增支出頁頂 banner）及商戶規則管理 | ✅ |
 | + | 旅程（第 4 期）：Sheet `Trips`（Name／Start／End／Currency／Note），`Records.Trip` 欄；新增支出選「旅遊」時顯示旅程選單，預設為日期所在旅程或 60 日內出發的旅程（出發前買機票），並切換至旅程預設幣種；短訊自動入帳的旅遊支出按日期自動標記（`tripFor_`）；旅程頁顯示合計、筆數、每日平均、外幣原額及按項目分佈；改名同步更新紀錄；修改紀錄可補選旅程 | ✅ |
+| + | 分帳（第 6a 期，側欄 🧾）：活動＋參加者（「我」固定）＋一筆或多筆支出，每筆選付款人及分攤方式（平均〔可剔除部分人〕／按份數／指定金額）；以最小貨幣單位整數計算（`spUnit`，JPY／KRW 無小數），餘數按小數部分大者分配，各人差額加總必為 0；貪婪配對建議轉帳（最多 n−1 筆），每筆可標記已收／已付（`data.done` 以 `from\|to\|amt` 為 key，金額改變即重置）；「結算並複製文字」設 `settledAt` 並複製 WhatsApp 文字；「我」的份額按每筆支出寫入 Records（ID `<splitId>_<expId>`，`SplitID` 欄，備註「AA：活動·內容」），待收／待付不計入支出；修改分帳紀錄會轉到分帳頁；常用參加者（localStorage `splitPeople`）；本機 `splitsCfg`＋`splitsPending` 樂觀寫入，30 秒／回前台重試；看門狗結算後 3 日仍有未清轉帳經 Signal 提醒一次（`SPLIT_SENT`） | ✅ |
 | + | 主畫面長按捷徑（manifest `shortcuts`）：記早餐／午餐／晚餐（`?s=日常&i=…`，直接聚焦金額）、待確認（`?p=inbox`）；圖示 `sc-*.png`；`sw.js` VERSION 升至 v2 | ✅ |
 | + | PWA：`manifest.json` + `sw.js`（index.html 網絡優先、其他靜態檔快取優先、Google Fonts SWR；GAS／匯率 API 不快取）；圖示 `icon.svg`／`icon-192/512.png`／`icon-maskable-512.png`／`apple-touch-icon.png` | ✅ |
 
@@ -77,24 +78,25 @@
 - 移除 PWA（manifest、圖示、Service Worker），隱藏 Details、連結表單、首次設定步驟及同步狀態；頁頂顯示體驗版說明
 
 ## Google Sheet 結構
-- `Records`: ID | Date | Section | Item | Amount | Remark | CreatedAt | FixedID | Currency | FxRate | OrigAmount | Trip
+- `Records`: ID | Date | Section | Item | Amount | Remark | CreatedAt | FixedID | Currency | FxRate | OrigAmount | Trip | SplitID
   - Amount 一律為 HKD（分析用）；外幣支出：OrigAmount 為原幣金額，FxRate 為「1 外幣 = ? HKD」；舊表由 `ensureRecHead_()` 自動補欄位標題
 - `Fixed`: ID | Item | Amount | Remark | StartYm（純文字 yyyy-MM） | Active | UpdatedAt | History | Cycle（M／Y，舊表由 `ensureFixHead_()` 補標題）
 - `Items`: Section | Item | Emoji | Order（自訂快選項目）
 - `Settings`: Key | Value（例如 `budget.total`、`budget.日常`）
 - `Inbox`: ID（`ib_`+短訊 MD5，防重送）| ReceivedAt | Source | Raw | Merchant | Currency | OrigAmount | Amount | TxDate | Status（pending／auto／confirmed／dismissed／ignored／skip）| RecordID | Suggest(JSON)
 - `Trips`: Name | Start | End（純文字 yyyy-MM-dd）| Currency | Note
+- `Splits`（第 6 期）: ID | Name | Date（純文字）| Currency | FxRate | Trip | Status（open／settled／done）| Data（JSON：people、expenses、done、transfers、unit）| UpdatedAt | SettledAt
 - `Merchants`: Merchant（大寫 key）| Section | Item（可為 `@meal`）| Remark | Mode（auto／ask／ignore）| Count | UpdatedAt
-- 指令碼屬性：`TOKEN`（必須）、`SIGNAL_UUID`／`SIGNAL_APIKEY`（可選）；系統自動寫入 `BUDGET_SENT`、`LAST_BACKUP`、`LAST_MONTHLY`、`LAST_WATCHDOG`、`WD_SENT`、`NOTIFY_QUEUE`、`INBOX_LAST`（第 5 期）
+- 指令碼屬性：`TOKEN`（必須）、`SIGNAL_UUID`／`SIGNAL_APIKEY`（可選）；系統自動寫入 `BUDGET_SENT`、`LAST_BACKUP`、`LAST_MONTHLY`、`LAST_WATCHDOG`、`WD_SENT`、`NOTIFY_QUEUE`、`INBOX_LAST`（第 5 期）、`SPLIT_SENT`（第 6 期）
 
 ## API（Code.gs）
 - GET `action=info` → `{sheetUrl, version, lastBackup, serverTime, signal, lastWatchdog, notifyQueue}`
 - GET `action=items` → `{items:{section:[[name, emoji], …]}}`
 - GET `action=inbox` → 待確認列表；`action=merchants` → 規則；`action=trips` → 旅程及統計
 - GET `action=settings` → `{settings}`；`action=summary&from&to` → `{months:{ym:{類別:金額, _n}}}`；`action=search&q&from` → `{rows（最近 300 筆）, count, total}`
-- GET `action=list&month=yyyy-MM` → `{rows}`
+- GET `action=list&month=yyyy-MM` → `{rows}`（含 `splitId`）；`action=splits` → `{rows}`
 - GET `action=fixed` → `{rows}`
-- POST `add`（固定項目可帶 `cycle`）/ `updateRecord` / `deleteRecord` / `updateFixed`（可帶 `cycle`）/ `toggleFixed` / `saveItems`（`items` 為空即還原預設）/ `saveSettings`（值為空即刪除該鍵）/ `inbox`（Tasker，亦接受 form-urlencoded）/ `confirmInbox`（remember：auto／ask／空）/ `dismissInbox`（remember：ignore）/ `saveRule` / `deleteRule` / `saveTrip`（`oldName` 改名）/ `deleteTrip`（`untag` 一併清除紀錄標記）；`add`／`updateRecord` 可帶 `trip`
+- POST `add`（固定項目可帶 `cycle`）/ `updateRecord` / `deleteRecord` / `updateFixed`（可帶 `cycle`）/ `toggleFixed` / `saveItems`（`items` 為空即還原預設）/ `saveSettings`（值為空即刪除該鍵）/ `inbox`（Tasker，亦接受 form-urlencoded）/ `confirmInbox`（remember：auto／ask／空）/ `dismissInbox`（remember：ignore）/ `saveRule` / `deleteRule` / `saveTrip`（`oldName` 改名）/ `deleteTrip`（`untag` 一併清除紀錄標記） / `saveSplit`（`split`＋`records`＝我的份額，以 SplitID 同步 Records）/ `deleteSplit`（連同紀錄）；`add`／`updateRecord` 可帶 `trip`
 - 手動函數：`setup`、`weeklyBackup`、`testSignal`
 - 所有請求需 `token`；寫入使用 `LockService`；所有回應附 `ms`（伺服器處理毫秒）
 
@@ -120,4 +122,6 @@
 - ✅ 第 4 期：#12 旅程標籤、#9 主畫面長按捷徑（manifest shortcuts）
 - ✅ 第 5 期（先於第 4 期執行）：通知自動記帳——Android 轉發器（**Tasker** 一次性付費；後備 Automate 免費版。MacroDroid 免費版現需每 2–3 日看廣告才維持巨集運作，不採用）把付款通知原文 POST 至 `action=inbox`；Code.gs 按銀行格式解析；`Merchants` 表記住「通知商戶 → 類別／項目／備註」，項目可設「餐（按時間）」按時段判斷早／午／晚餐；首次出現的商戶列入「待確認」；同金額 15 分鐘內視為可能重複；入帳後經 **CallMeBot Signal API** 通知（用家已在另一專案「St 美股分析」使用，見下）
   - Signal 通知要點（沿用 St 專案經驗）：endpoint `https://signal.callmebot.com/signal/send.php?phone=<UUID>&apikey=<KEY>&text=…`；`phone` 必須是 Bot 回覆網址中 36 字元 UUID；UUID／apikey 存於本專案指令碼屬性 `SIGNAL_UUID`／`SIGNAL_APIKEY`（不入 repo）；`UrlFetchApp` 網址上限 2KB（中文約 200 字／條，入帳通知很短不需分段）；CallMeBot 出錯亦回 HTTP 200，成功須同時符合回覆含 `sent`／`queued`／`Apikey Correct` 且不含 `error`／`invalid`；免費第三方服務，訊息內容經其伺服器
+- ✅ 第 6a 期：分帳頁（取代獨立的 Split-Tools repo）＋催收提醒
+- 第 6b 期（未執行）：「待確認」短訊轉為分帳、新增支出頁「AA」按鈕、支出概覽顯示「AA 待收」、旅程頁顯示 AA 後真實成本
 - 未選：#4 信用卡手續費、#6 儲存後日期回到今天、#15 匯出 CSV

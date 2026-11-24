@@ -310,6 +310,38 @@ select.text-in{appearance:auto;padding:10px 12px}
 .health .bad{color:var(--danger)} .health .good{color:#5E9E6E}
 a{color:inherit}
 @media (prefers-reduced-motion: reduce){ *{transition:none!important;scroll-behavior:auto!important} }
+/* 分帳 */
+.sp-chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:10px 0 0}
+.sp-chip{border:1px solid var(--line);background:var(--surface-2);border-radius:999px;padding:5px 12px;font-size:14px;color:var(--ink);display:inline-flex;align-items:center}
+.sp-chip.on{background:var(--primary);color:var(--primary-ink);border-color:var(--primary)}
+.sp-chip.off{opacity:.5;text-decoration:line-through}
+.sp-chip .x{border:0;background:none;color:inherit;margin:0 -4px 0 6px;padding:0 4px;font-size:16px;line-height:1;opacity:.75}
+.sp-add{display:flex;gap:8px;margin-top:10px}
+.sp-add .ghost{padding:0 16px;font-size:14px}
+.sp-exp{margin-top:12px}
+.sp-head{display:flex;justify-content:space-between;align-items:center}
+.sp-rows{margin:2px 0}
+.sp-row{display:grid;grid-template-columns:1fr 120px;gap:10px;align-items:center;margin:6px 0;font-size:14px}
+.sp-row .text-in{padding:8px 10px;text-align:right}
+.sp-exp .hint{margin-top:8px}
+.sp-more{width:100%;margin-top:12px;padding:12px;font-size:14px;border-style:dashed}
+.sp-del{width:100%;margin-top:14px;padding:12px;font-size:14px;color:var(--danger)}
+.sp-tbl{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+.sp-tbl th{font-weight:500;color:var(--muted);text-align:right;padding:4px 0 6px;border-bottom:1px solid var(--line)}
+.sp-tbl td{text-align:right;padding:6px 0;border-bottom:1px solid var(--line)}
+.sp-tbl th:first-child,.sp-tbl td:first-child{text-align:left}
+.sp-sub{font-size:13px;color:var(--muted);margin:14px 0 2px}
+.sp-tx{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
+.sp-tx:last-child{border-bottom:0}
+.sp-tx .amt{margin-left:auto;font-weight:600;font-variant-numeric:tabular-nums}
+.sp-tx .sp-chip{padding:3px 10px;font-size:13px}
+.sp-tx.done .who,.sp-tx.done .amt{opacity:.5;text-decoration:line-through}
+.sp-card{margin-bottom:12px;cursor:pointer}
+.sp-card .sp-total{font-size:20px;font-weight:600}
+.sp-open{margin-top:6px;border-top:1px solid var(--line)}
+.sp-st{font-size:12px;border-radius:999px;padding:1px 8px;margin-left:8px;background:var(--soft);color:var(--muted);vertical-align:2px}
+.sp-st.settled{background:var(--warn-bg);color:var(--warn-ink)}
+.sp-st.done{color:var(--st-ok)}
 </style>
 </head>
 <body>
@@ -325,6 +357,7 @@ a{color:inherit}
     <button class="nav-item" data-page="analysis"><span class="ni">📈</span><span class="label">Monthly Analysis</span></button>
     <div class="spacer"></div>
     <button class="nav-item" data-page="trips"><span class="ni">🧳</span><span class="label">旅程</span></button>
+    <button class="nav-item" data-page="splits"><span class="ni">🧾</span><span class="label">分帳</span></button>
     <button class="nav-item" data-page="inbox"><span class="ni">📥</span><span class="label">待確認</span><span class="ib-badge label" id="ibBadge" hidden></span></button>
     <button class="nav-item" data-page="search"><span class="ni">🔍</span><span class="label">搜尋</span></button>
     <button class="nav-item" data-page="settings"><span class="ni">⚙️</span><span class="label">設定</span></button>
@@ -412,6 +445,11 @@ a{color:inherit}
         <p class="hint small" style="margin-top:8px">旅程期間在「旅遊」記帳會自動標記此旅程並切換至預設幣種；出發前購買的機票、酒店亦可手動選擇旅程。</p>
       </div>
       <div id="tripList" style="margin-top:12px"></div>
+    </section>
+
+    <!-- Splits -->
+    <section class="page" id="p-splits" hidden>
+      <div id="spBody"></div>
     </section>
 
     <!-- Search -->
@@ -556,7 +594,7 @@ const PAL_L = ['#2a78d6','#eb6834','#1baf7a','#eda100','#e87ba4','#008300','#625
 const PAL_D = ['#3987e5','#d95926','#199e70','#c98500','#d55181','#0ca30c','#9085e9','#e66767'];
 const pal = () => matchMedia('(prefers-color-scheme: dark)').matches ? PAL_D : PAL_L;
 const secColor = sec => pal()[Math.max(0, ORDER.indexOf(sec))];
-const TITLES = {input:'新增支出', expense:'支出概覽', analysis:'每月分析', trips:'旅程', inbox:'待確認消費', search:'搜尋', settings:'設定'};
+const TITLES = {input:'新增支出', expense:'支出概覽', analysis:'每月分析', trips:'旅程', splits:'分帳', inbox:'待確認消費', search:'搜尋', settings:'設定'};
 const IH = 40;
 
 const $ = s => document.querySelector(s);
@@ -712,7 +750,7 @@ async function loadFixed(){
 const getQ = () => JSON.parse(localStorage.getItem('expenseQueue') || '[]');
 const setQ = q => { localStorage.setItem('expenseQueue', JSON.stringify(q)); updateSync(); };
 let flushing = false, inFlight = null, syncErr = '';
-const API_VERSION = 7; // 與 Code.gs 的 API_VERSION 對應
+const API_VERSION = 8; // 與 Code.gs 的 API_VERSION 對應
 // 同步健康狀態（只存本機）：okAt 最後成功同步時間；err／errAt 最近一次錯誤
 function noteHealth(ok, err){
   const h = lsGet('syncHealth', {});
@@ -800,11 +838,12 @@ function refresh(){
   if (S.page==='search') renderSearch();
   if (S.page==='inbox') renderInbox();
   if (S.page==='trips') renderTrips();
+  if (S.page==='splits') renderSplits();
   if (S.page==='settings') renderSettings();
 }
 $$('.nav-item').forEach(b => b.addEventListener('click', () => go(b.dataset.page)));
 // 置頂列：下捲超過 60px 縮細，捲回頂部 10px 內還原（差距大於高度變化，避免來回跳動）
-const PAGE_ICONS = {input:'✏️', expense:'📋', analysis:'📈', trips:'🧳', inbox:'📥', search:'🔍', settings:'⚙️'};
+const PAGE_ICONS = {input:'✏️', expense:'📋', analysis:'📈', trips:'🧳', splits:'🧾', inbox:'📥', search:'🔍', settings:'⚙️'};
 let tbTick = false;
 addEventListener('scroll', () => {
   if (tbTick) return; tbTick = true;
@@ -1247,7 +1286,12 @@ function reUpd(){
   $('#reHkd').textContent = c !== 'HKD' && a > 0 && r > 0 ? `≈ ${money(round2(a*r))}` : '';
 }
 function openRec(id){
-  const r = findRec(id); if (!r) return; S.reEdit = r;
+  const r = findRec(id); if (!r) return;
+  if (r.splitId){ // 分帳產生的紀錄：到分帳頁修改，令份額與結算一致
+    if (spOpen(r.splitId)){ go('splits'); toast('此紀錄由分帳產生，請在分帳頁修改'); } else toast('此紀錄由分帳產生，請到分帳頁修改');
+    return;
+  }
+  S.reEdit = r;
   const fixed = !!r.fixedId;
   $('#reTitle').textContent = `修改：${r.item}${r.pending ? '（未同步）' : ''}`;
   $('#reDate').value = r.date;
@@ -1612,6 +1656,319 @@ $('#tfSave').addEventListener('click', async () => {
   btn.disabled = false;
 });
 
+/* ---------- 分帳（第 6 期） ----------
+   活動 → 參加者（「我」固定為第一位）＋一筆或多筆支出；每筆可平均（可剔除部分人）、按份數或指定金額分攤。
+   以最小貨幣單位（整數）計算：餘數按小數部分大者優先分配，各人差額加總必定為 0。
+   「我」的份額寫入 Records（SplitID 欄）；待收／待付不計入支出。
+   儲存先寫入本機（splitsCfg＋splitsPending），背景同步至 Sheet，失敗會於 30 秒／回到前台時重試。 */
+const ME = '我', SPLIT_REMIND_DAYS = 3;
+S.splits = lsGet('splitsCfg', []); S.spEdit = null; S.spLoaded = false;
+const spPend = () => lsGet('splitsPending', {});
+const spUnit = c => { try { return 10 ** new Intl.NumberFormat('en', {style:'currency', currency:c}).resolvedOptions().maximumFractionDigits; } catch(e){ return 100; } };
+const spMoney = (minor, unit, c) => c === 'HKD' ? money(minor / unit) : curMoney(minor / unit, c);
+const spDefItem = sec => { const names = (SECTIONS[sec] || []).map(x => x[0]), pref = {旅遊:'餐飲', 日常:'晚餐'}[sec]; return names.includes(pref) ? pref : names[0] || ''; };
+const spClone = sp => JSON.parse(JSON.stringify(sp));
+function spNewExp(sp){ const sec = sp.trip ? '旅遊' : '日常'; return { id:uid().replace(/-/g,'').slice(0,8), desc:'', amt:'', payer:ME, mode:'eq', inc:{}, w:{}, x:{}, sec, item:spDefItem(sec) }; }
+function spNew(){
+  const sp = { id:'sp' + uid().replace(/-/g,'').slice(0,12), name:'', date:todayStr(), currency:'HKD', fxRate:1, trip:'', status:'open', settledAt:'', data:{ people:[ME], expenses:[], done:{} } };
+  sp.data.expenses.push(spNewExp(sp)); return sp;
+}
+// 單筆支出的分攤（最小單位整數）
+function spShares(e, P, unit, cur){
+  const T = Math.round((num(e.amt) || 0) * unit), share = Object.fromEntries(P.map(p => [p, 0]));
+  if (!(T > 0)) return { T, share, err:'請輸入金額' };
+  if (!P.includes(e.payer)) return { T, share, err:'請選擇付款人' };
+  if (e.mode === 'x'){
+    let s = 0; P.forEach(p => { share[p] = Math.max(0, Math.round((num(e.x[p]) || 0) * unit)); s += share[p]; });
+    if (s !== T) return { T, share, err: s < T ? `尚餘 ${spMoney(T - s, unit, cur)} 未分配` : `各人金額合計多出 ${spMoney(s - T, unit, cur)}` };
+    return { T, share };
+  }
+  const w = P.map(p => e.mode === 'w' ? Math.max(0, e.w[p] === undefined || e.w[p] === '' ? 1 : (num(e.w[p]) || 0)) : (e.inc[p] === false ? 0 : 1));
+  const W = w.reduce((a,b) => a + b, 0); if (!(W > 0)) return { T, share, err:'至少要有一人分攤' };
+  const ex = w.map(x => T * x / W), fl = ex.map(Math.floor);
+  let rem = T - fl.reduce((a,b) => a + b, 0);
+  const ord = ex.map((v,i) => [v - fl[i], i]).filter(([,i]) => w[i] > 0).sort((a,b) => b[0] - a[0] || a[1] - b[1]);
+  for (let k = 0; rem > 0; k++, rem--) fl[ord[k % ord.length][1]]++;
+  P.forEach((p,i) => share[p] = fl[i]);
+  return { T, share };
+}
+// 整個活動：已付／應付／差額＋建議轉帳（貪婪配對，最多 n−1 筆）
+function spCalc(sp){
+  const unit = spUnit(sp.currency), P = sp.data.people, paid = {}, owe = {};
+  P.forEach(p => { paid[p] = 0; owe[p] = 0; });
+  const per = sp.data.expenses.map(e => { const r = spShares(e, P, unit, sp.currency); if (!r.err){ paid[e.payer] += r.T; P.forEach(p => owe[p] += r.share[p]); } return r; });
+  const net = Object.fromEntries(P.map(p => [p, paid[p] - owe[p]]));
+  const cr = P.filter(p => net[p] > 0).map(p => ({p, a:net[p]})).sort((a,b) => b.a - a.a);
+  const db = P.filter(p => net[p] < 0).map(p => ({p, a:-net[p]})).sort((a,b) => b.a - a.a);
+  const tx = []; let i = 0, j = 0;
+  while (i < db.length && j < cr.length){
+    const a = Math.min(db[i].a, cr[j].a); tx.push({ from:db[i].p, to:cr[j].p, amt:a });
+    db[i].a -= a; cr[j].a -= a; if (!db[i].a) i++; if (!cr[j].a) j++;
+  }
+  tx.forEach(t => t.done = !!sp.data.done[`${t.from}|${t.to}|${t.amt}`]);
+  return { unit, paid, owe, net, per, tx, total:per.reduce((a,r) => a + (r.err ? 0 : r.T), 0), errs:per.filter(r => r.err) };
+}
+// 我的份額 → 記帳簿紀錄（每筆支出一筆）
+function spRecords(sp, c){
+  const rate = sp.currency === 'HKD' ? 1 : Number(sp.fxRate);
+  return sp.data.expenses.map((e,i) => {
+    const r = c.per[i], mine = r.err ? 0 : r.share[ME]; if (!(mine > 0)) return null;
+    const orig = mine / c.unit;
+    return { id:`${sp.id}_${e.id}`, date:sp.date, section:e.sec, item:e.item, amount:round2(orig * rate), remark:`AA：${sp.name}${e.desc ? '·' + e.desc : ''}`,
+      currency:sp.currency, fxRate:rate, origAmount:orig, trip:e.sec === '旅遊' ? sp.trip : '' };
+  }).filter(Boolean);
+}
+function spStore(sp, c){
+  sp.data.transfers = c.tx.map(t => ({ from:t.from, to:t.to, amt:t.amt, done:t.done })); sp.data.unit = c.unit;
+  if (sp.status !== 'open') sp.status = c.tx.every(t => t.done) ? 'done' : 'settled';
+  sp.updatedAt = new Date().toISOString();
+  S.splits = [sp, ...S.splits.filter(x => x.id !== sp.id)].sort(spSort); lsSet('splitsCfg', S.splits);
+  const pend = spPend(); pend[sp.id] = { split:sp, records:spRecords(sp, c) }; lsSet('splitsPending', pend);
+  flushSplits();
+}
+const spSort = (a,b) => b.date.localeCompare(a.date) || String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''));
+let spFlushing = false;
+async function flushSplits(){
+  if (spFlushing || !cfg.url || !Object.keys(spPend()).length) return;
+  spFlushing = true; let n = 0;
+  try {
+    for (const id of Object.keys(spPend())){
+      const x = spPend()[id]; if (!x) continue;
+      try { await post(x.del ? {action:'deleteSplit', id} : {action:'saveSplit', split:x.split, records:x.records}); }
+      catch(e){ break; }
+      const p = spPend(); if (JSON.stringify(p[id]) === JSON.stringify(x)){ delete p[id]; lsSet('splitsPending', p); }
+      n++;
+    }
+  } finally { spFlushing = false; }
+  if (n){ resetCache(); dropSummary(); if (S.page === 'splits'){ if (!S.spEdit) renderSplits(); } else if (['input','expense','analysis'].includes(S.page)) refresh(); }
+}
+setInterval(flushSplits, 30000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) flushSplits(); });
+window.addEventListener('online', flushSplits);
+async function syncSplits(){
+  try {
+    const j = await get({action:'splits'}), pend = spPend();
+    S.splits = j.rows.filter(r => !pend[r.id]).concat(Object.values(pend).filter(x => !x.del).map(x => x.split)).sort(spSort);
+    lsSet('splitsCfg', S.splits); S.spLoaded = true;
+  } catch(e){}
+  return S.splits;
+}
+const spNorm = sp => { sp.data = sp.data || {}; sp.data.people = sp.data.people || [ME]; sp.data.done = sp.data.done || {};
+  (sp.data.expenses = sp.data.expenses || []).forEach(e => { e.inc = e.inc || {}; e.w = e.w || {}; e.x = e.x || {}; }); return sp; };
+function spOpen(id){ const sp = S.splits.find(x => x.id === id); if (!sp) return false; S.spEdit = spNorm(spClone(sp)); return true; }
+
+const SP_ST = { open:'未結算', settled:'待清數', done:'已清數' };
+function spTxHtml(t, M, sid){
+  const lbl = t.to === ME ? '已收' : t.from === ME ? '已付' : '已清';
+  return `<div class="sp-tx${t.done ? ' done' : ''}"><span class="who">${esc(t.from)} → ${esc(t.to)}</span><span class="amt">${M(t.amt)}</span>
+    <button type="button" class="sp-chip${t.done ? ' on' : ''}" data-sptx="${esc(`${t.from}|${t.to}|${t.amt}`)}"${sid ? ` data-sid="${esc(sid)}"` : ''}>${t.done ? '✓ ' + lbl : lbl}</button></div>`;
+}
+function renderSplits(){
+  if (S.spEdit) return spRenderEd();
+  const pend = spPend(); let due = 0, owe = 0;
+  const cards = S.splits.map(sp => {
+    spNorm(sp);
+    const c = spCalc(sp), u = c.unit, cur = sp.currency, rate = cur === 'HKD' ? 1 : sp.fxRate, M = v => spMoney(v, u, cur);
+    const open = c.tx.filter(t => !t.done);
+    open.forEach(t => { if (t.to === ME) due += t.amt / u * rate; if (t.from === ME) owe += t.amt / u * rate; });
+    const st = sp.status !== 'open' && !open.length ? 'done' : sp.status;
+    return `<div class="card sp-card" data-spopen="${esc(sp.id)}">
+      <div class="trip-head"><div><b>${esc(sp.name)}</b><span class="sp-st ${st}">${SP_ST[st]}</span>
+        <div class="sub muted small">${sp.date.slice(5).replace('-','/')}，${sp.data.people.length} 人，${sp.data.expenses.length} 筆${sp.trip ? `，${esc(sp.trip)}` : ''}${pend[sp.id] ? '，待同步' : ''}</div></div>
+        <span class="num sp-total">${M(c.total)}</span></div>
+      <div class="muted small">我的份額 ${M(c.owe[ME] || 0)}${cur !== 'HKD' ? `（≈ ${money(round2((c.owe[ME] || 0) / u * rate))}）` : ''}</div>
+      ${open.length ? `<div class="sp-open">${open.map(t => spTxHtml(t, M, sp.id)).join('')}</div>` : ''}
+    </div>`;
+  }).join('');
+  $('#spBody').innerHTML = `<button class="primary" type="button" id="spNew">＋ 新增分帳</button>
+    ${due || owe ? `<div class="card" style="margin-top:12px"><div class="stats">
+      <div><div class="muted small">AA 待收</div><div class="total">${money(round2(due))}</div></div>
+      <div><div class="muted small">待付</div><div class="delta">${money(round2(owe))}</div></div></div>
+      <p class="hint small" style="margin-top:6px">待收／待付不計入支出；記帳簿只記錄你的份額。</p></div>` : ''}
+    <div style="margin-top:12px">${cards || `<div class="card"><p class="muted">未有分帳。<br>一人先付全數：新增分帳 → 加入朋友 → 輸入金額。<br>多人各付不同項目：每筆支出選擇付款人，最後合併計算最少轉帳。</p></div>`}</div>`;
+  if (!S.spLoaded && cfg.url){ S.spLoaded = true; const before = JSON.stringify(S.splits); syncSplits().then(() => { if (S.page === 'splits' && !S.spEdit && JSON.stringify(S.splits) !== before) renderSplits(); }); }
+}
+const SP_SECS = ['旅遊','日常','其他'];
+function spExpHtml(sp, e, i){
+  const P = sp.data.people, n = sp.data.expenses.length, items = SECTIONS[e.sec] || [];
+  const per = P.map(p => {
+    if (e.mode === 'eq') return `<button type="button" class="sp-chip ${e.inc[p] === false ? 'off' : 'on'}" data-spinc="${i}" data-p="${esc(p)}">${esc(p)}</button>`;
+    const v = e.mode === 'w' ? (e.w[p] ?? 1) : (e.x[p] ?? '');
+    return `<label class="sp-row"><span>${esc(p)}</span><input class="text-in" inputmode="decimal" data-spv="${i}" data-p="${esc(p)}" value="${esc(v)}" placeholder="${e.mode === 'w' ? '1' : '0'}"></label>`;
+  }).join('');
+  return `<div class="card sp-exp">
+    <div class="sp-head"><strong>${n > 1 ? `支出 ${i + 1}` : '支出'}</strong>${n > 1 ? `<button class="ghost" type="button" data-sprme="${i}">刪除</button>` : ''}</div>
+    <div class="re-grid" style="margin-top:10px">
+      <label class="field" style="grid-column:1/-1">內容（可留空）<input class="text-in" data-spe="${i}" data-k="desc" value="${esc(e.desc)}" maxlength="30" placeholder="例如 晚餐、的士、酒店" autocomplete="off"></label>
+      <label class="field">金額（${esc(CUR[sp.currency]?.[1] || sp.currency)}）<input class="text-in sp-amt" data-spe="${i}" data-k="amt" inputmode="decimal" value="${esc(e.amt)}" placeholder="0" autocomplete="off"></label>
+      <label class="field">付款人<select class="text-in" data-spe="${i}" data-k="payer">${P.map(p => `<option${p === e.payer ? ' selected' : ''}>${esc(p)}</option>`).join('')}</select></label>
+    </div>
+    <div class="seg full" data-spmode="${i}">${[['eq','平均'],['w','按份數'],['x','指定金額']].map(([k,l]) => `<button type="button" data-m="${k}" class="${e.mode === k ? 'active' : ''}">${l}</button>`).join('')}</div>
+    <div class="${e.mode === 'eq' ? 'sp-chips' : 'sp-rows'}">${per}</div>
+    <p class="hint small" data-sphint="${i}"></p>
+    <div class="re-grid" style="margin-top:10px">
+      <label class="field">我的份額記入<select class="text-in" data-spe="${i}" data-k="sec">${SP_SECS.map(s => `<option${s === e.sec ? ' selected' : ''}>${s}</option>`).join('')}</select></label>
+      <label class="field">項目<select class="text-in" data-spe="${i}" data-k="item">${items.map(([nm]) => `<option${nm === e.item ? ' selected' : ''}>${esc(nm)}</option>`).join('')}${e.item && !items.some(x => x[0] === e.item) ? `<option selected>${esc(e.item)}</option>` : ''}</select></label>
+    </div>
+  </div>`;
+}
+function spSuggest(P){
+  const m = lsGet('splitPeople', {});
+  return Object.keys(m).filter(n => !P.includes(n)).sort((a,b) => m[b] - m[a]).slice(0, 8);
+}
+function spRenderEd(){
+  const sp = S.spEdit, P = sp.data.people, foreign = sp.currency !== 'HKD', sugg = spSuggest(P), exists = S.splits.some(x => x.id === sp.id);
+  $('#spBody').innerHTML = `<div class="card">
+      <strong>${exists ? '修改分帳' : '新增分帳'}</strong>
+      <div class="re-grid" style="margin-top:10px">
+        <label class="field" style="grid-column:1/-1">活動名稱<input class="text-in" data-sp="name" value="${esc(sp.name)}" maxlength="30" placeholder="例如 週五打邊爐（可留空）" autocomplete="off"></label>
+        <label class="field">日期<input class="text-in" type="date" data-sp="date" value="${sp.date}"></label>
+        <label class="field">幣種<select class="text-in" data-sp="currency">${$('#cur').innerHTML}</select></label>
+        ${foreign ? `<label class="field">匯率（1 ${sp.currency} = ? HKD）<input class="text-in" data-sp="fxRate" inputmode="decimal" value="${fmtRate(sp.fxRate)}"></label>` : ''}
+        <label class="field"${foreign ? '' : ' style="grid-column:1/-1"'}>旅程<select class="text-in" data-sp="trip">${tripOpts(sp.trip)}</select></label>
+      </div>
+    </div>
+    <div class="card" style="margin-top:12px">
+      <strong>參加者（${P.length} 人）</strong>
+      <div class="sp-chips">${P.map(p => `<span class="sp-chip on">${esc(p)}${p === ME ? '' : `<button type="button" class="x" data-sprm="${esc(p)}" aria-label="移除 ${esc(p)}">×</button>`}</span>`).join('')}</div>
+      <div class="sp-add"><input class="text-in" id="spNewP" maxlength="12" placeholder="輸入名字" autocomplete="off" enterkeyhint="done"><button class="ghost" type="button" id="spAddP">加入</button></div>
+      ${sugg.length ? `<div class="sp-chips"><span class="muted small">常用：</span>${sugg.map(nm => `<button type="button" class="sp-chip" data-spadd="${esc(nm)}">＋ ${esc(nm)}</button>`).join('')}</div>` : ''}
+    </div>
+    ${sp.data.expenses.map((e,i) => spExpHtml(sp, e, i)).join('')}
+    <button class="ghost sp-more" type="button" id="spAddE">＋ 新增一筆支出（多人各付不同項目）</button>
+    <div class="card" id="spRes" style="margin-top:12px"></div>
+    <div class="row-btns" style="margin-top:12px"><button class="ghost" type="button" id="spCancel">取消</button><button class="ghost" type="button" id="spSave">儲存</button>
+      <button class="primary" type="button" id="spSettle">${sp.status === 'open' ? '結算並複製文字' : '儲存並複製文字'}</button></div>
+    ${sp.status === 'open' ? `<p class="hint small" style="margin:8px 4px">「結算」後開始追收：${SPLIT_REMIND_DAYS} 日後仍有轉帳未清，會經 Signal 提醒你一次。</p>` : sp.settledAt ? `<p class="hint small" style="margin:8px 4px">已於 ${relTime(sp.settledAt)}結算。</p>` : ''}
+    ${exists ? '<button class="ghost sp-del" type="button" id="spDel">刪除此分帳（連同記帳紀錄）</button>' : ''}`;
+  $('#spBody [data-sp="currency"]').value = sp.currency;
+  spRenderRes();
+}
+function spRenderRes(){
+  const sp = S.spEdit, c = spCalc(sp), u = c.unit, cur = sp.currency, M = v => spMoney(v, u, cur), P = sp.data.people;
+  const hk = v => cur !== 'HKD' && sp.fxRate > 0 ? `（≈ ${money(round2(v / u * sp.fxRate))}）` : '';
+  c.per.forEach((r,i) => {
+    const h = $(`#spBody [data-sphint="${i}"]`), e = sp.data.expenses[i]; if (!h) return;
+    if (r.err){ h.className = 'hint small st-warn-t'; h.textContent = r.err; return; }
+    const k = P.filter(p => r.share[p] > 0).length, mine = r.share[ME];
+    h.className = 'hint small';
+    h.textContent = `${k} 人分攤` + (mine > 0 ? `，我的份額 ${M(mine)}${hk(mine)}，記入 ${e.sec}·${e.item}` : '，我不用分攤（不會入帳）');
+  });
+  $('#spRes').innerHTML = `<strong>結算</strong>
+    <div class="muted small" style="margin:4px 0 8px">合計 ${M(c.total)}${hk(c.total)}${c.errs.length ? `，${c.errs.length} 筆支出未完成` : ''}</div>
+    <table class="sp-tbl"><thead><tr><th>參加者</th><th>已付</th><th>應付</th><th>差額</th></tr></thead><tbody>
+    ${P.map(p => `<tr><td>${esc(p)}</td><td>${M(c.paid[p])}</td><td>${M(c.owe[p])}</td><td class="${c.net[p] > 0 ? 'st-ok-t' : c.net[p] < 0 ? 'st-warn-t' : ''}">${c.net[p] > 0 ? '收 ' : c.net[p] < 0 ? '付 ' : ''}${M(Math.abs(c.net[p]))}</td></tr>`).join('')}
+    </tbody></table>
+    <div class="sp-sub">建議轉帳（${c.tx.length} 筆）</div>
+    ${c.tx.length ? c.tx.map(t => spTxHtml(t, M)).join('') : '<p class="muted small">不需要轉帳。</p>'}`;
+}
+function spText(sp, c){
+  const M = v => spMoney(v, c.unit, sp.currency), P = sp.data.people;
+  return [`🧾 ${sp.name}（${sp.date.slice(5).replace('-','/')}）`, `合計 ${M(c.total)}，${P.length} 人`,
+    ...sp.data.expenses.map((e,i) => `· ${e.desc || (sp.data.expenses.length > 1 ? `支出 ${i + 1}` : '支出')} ${M(c.per[i].T)}（${e.payer}付${e.mode === 'w' ? '，按份數' : e.mode === 'x' ? '，按指定金額' : P.some(p => e.inc[p] === false) ? `，${P.filter(p => e.inc[p] !== false).join('、')}分` : ''}）`),
+    '—', ...(c.tx.length ? c.tx.map(t => `${t.from} → ${t.to} ${M(t.amt)}${t.done ? ' ✓' : ''}`) : ['不需要轉帳'])].join('\n');
+}
+async function copyText(text){
+  try { if (navigator.clipboard && window.isSecureContext){ await navigator.clipboard.writeText(text); return true; } } catch(e){}
+  const ta = Object.assign(document.createElement('textarea'), { value:text, readOnly:true }); ta.style.cssText = 'position:fixed;top:-9999px';
+  document.body.appendChild(ta); ta.select(); let ok = false; try { ok = document.execCommand('copy'); } catch(e){} ta.remove(); return ok;
+}
+function spAddPerson(name, focus){
+  const P = S.spEdit.data.people; name = String(name || '').trim().slice(0, 12);
+  if (!name) return;
+  if (P.includes(name)) return toast('已有同名參加者');
+  P.push(name); spRenderEd(); if (focus) $('#spNewP').focus();
+}
+async function spSave(copy){
+  const sp = S.spEdit;
+  sp.name = sp.name.trim() || `分帳 ${sp.date.slice(5).replace('-','/')}`;
+  if (sp.data.expenses.length > 1) sp.data.expenses = sp.data.expenses.filter(e => String(e.amt).trim() || e.desc.trim()); // 剔除空白支出
+  const c = spCalc(sp);
+  const err = sp.data.people.length < 2 ? '請加入最少一位參加者' : !sp.data.expenses.length ? '請輸入支出' : c.errs.length ? `支出未完成：${c.errs[0].err}`
+    : sp.currency !== 'HKD' && !(sp.fxRate > 0) ? '請輸入有效匯率' : '';
+  if (err){ spRenderEd(); return toast(err); }
+  const first = sp.status === 'open' && copy;
+  if (first){ sp.status = 'settled'; sp.settledAt = new Date().toISOString(); }
+  const m = lsGet('splitPeople', {}); sp.data.people.forEach(p => { if (p !== ME) m[p] = (m[p] || 0) + 1; }); lsSet('splitPeople', m);
+  spStore(sp, c);
+  S.spEdit = null; renderSplits(); scrollTo({ top:0, behavior:'smooth' });
+  if (!copy) return toast('已儲存分帳');
+  const ok = await copyText(spText(sp, c));
+  toast(`${first ? '已結算' : '已儲存'}${ok ? '並複製結算文字，可貼到 WhatsApp' : '（未能複製，請再試）'}${first && c.tx.length ? `；${SPLIT_REMIND_DAYS} 日後仍未清數會經 Signal 提醒` : ''}`, 4200);
+}
+const spBody = $('#spBody');
+spBody.addEventListener('input', e => {
+  const t = e.target, sp = S.spEdit; if (!sp || t.tagName === 'SELECT') return;
+  if (t.dataset.sp){
+    const k = t.dataset.sp;
+    if (k === 'fxRate'){ t.value = t.value.replace(/[^\d.]/g,'').replace(/(\..*)\./g,'$1'); sp.fxRate = parseFloat(t.value) || 0; }
+    else if (k === 'date'){ if (t.value) sp.date = t.value; }
+    else sp[k] = t.value;
+  } else if (t.dataset.spe !== undefined){
+    const ex = sp.data.expenses[+t.dataset.spe];
+    if (t.dataset.k === 'amt') fmtAmountInput(t);
+    ex[t.dataset.k] = t.value;
+  } else if (t.dataset.spv !== undefined){
+    const ex = sp.data.expenses[+t.dataset.spv];
+    if (ex.mode === 'x') fmtAmountInput(t); else t.value = t.value.replace(/[^\d.]/g,'').replace(/(\..*)\./g,'$1');
+    ex[ex.mode][t.dataset.p] = t.value;
+  } else return;
+  spRenderRes();
+});
+spBody.addEventListener('change', e => {
+  const t = e.target, sp = S.spEdit; if (!sp || t.tagName !== 'SELECT') return;
+  if (t.dataset.sp === 'currency'){ sp.currency = t.value; sp.fxRate = t.value === 'HKD' ? 1 : reRateDefault(t.value); return spRenderEd(); }
+  if (t.dataset.sp === 'trip'){
+    sp.trip = t.value; const c = tripObj(sp.trip)?.currency;
+    if (sp.trip){ if (c && CUR[c]){ sp.currency = c; sp.fxRate = c === 'HKD' ? 1 : reRateDefault(c); } sp.data.expenses.forEach(x => { if (x.sec !== '旅遊'){ x.sec = '旅遊'; x.item = spDefItem('旅遊'); } }); }
+    return spRenderEd();
+  }
+  if (t.dataset.spe !== undefined){
+    const ex = sp.data.expenses[+t.dataset.spe]; ex[t.dataset.k] = t.value;
+    if (t.dataset.k === 'sec'){ ex.item = spDefItem(t.value); return spRenderEd(); }
+    spRenderRes();
+  }
+});
+spBody.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'spNewP'){ e.preventDefault(); spAddPerson(e.target.value, true); } });
+spBody.addEventListener('click', e => {
+  const b = e.target.closest('button, [data-spopen]'); if (!b) return;
+  const sp = S.spEdit;
+  if (b.id === 'spNew'){ S.spEdit = spNew(); spRenderEd(); scrollTo({ top:0 }); return; }
+  if (b.dataset.sptx){
+    const key = b.dataset.sptx;
+    if (b.dataset.sid){ // 列表：即時標記並儲存
+      const x = S.splits.find(s => s.id === b.dataset.sid); if (!x) return;
+      const y = spNorm(spClone(x)); y.data.done[key] = !y.data.done[key]; spStore(y, spCalc(y)); renderSplits();
+      const [f, to] = key.split('|'); toast(`已標記 ${f} → ${to} ${y.data.done[key] ? '已清數' : '未清數'}`); return;
+    }
+    sp.data.done[key] = !sp.data.done[key]; return spRenderRes();
+  }
+  if (b.dataset.spopen){ if (spOpen(b.dataset.spopen)){ spRenderEd(); scrollTo({ top:0 }); } return; }
+  if (!sp) return;
+  if (b.id === 'spAddP') return spAddPerson($('#spNewP').value, true);
+  if (b.dataset.spadd) return spAddPerson(b.dataset.spadd, false);
+  if (b.dataset.sprm){
+    const p = b.dataset.sprm; sp.data.people = sp.data.people.filter(x => x !== p);
+    let moved = false;
+    sp.data.expenses.forEach(x => { if (x.payer === p){ x.payer = ME; moved = true; } delete x.inc[p]; delete x.w[p]; delete x.x[p]; });
+    spRenderEd(); if (moved) toast(`${p} 付款的支出已改為「我」付，請檢查`); return;
+  }
+  if (b.id === 'spAddE'){ sp.data.expenses.push(spNewExp(sp)); spRenderEd(); const cards = $$('#spBody .sp-exp'); cards[cards.length - 1]?.scrollIntoView({ behavior:'smooth', block:'center' }); return; }
+  if (b.dataset.sprme !== undefined){ sp.data.expenses.splice(+b.dataset.sprme, 1); return spRenderEd(); }
+  const mode = b.closest('[data-spmode]');
+  if (mode && b.dataset.m){ sp.data.expenses[+mode.dataset.spmode].mode = b.dataset.m; return spRenderEd(); }
+  if (b.dataset.spinc !== undefined){ const ex = sp.data.expenses[+b.dataset.spinc], p = b.dataset.p; ex.inc[p] = ex.inc[p] === false; b.classList.toggle('on', ex.inc[p] !== false); b.classList.toggle('off', ex.inc[p] === false); return spRenderRes(); }
+  if (b.id === 'spCancel'){ S.spEdit = null; renderSplits(); return; }
+  if (b.id === 'spSave') return spSave(false);
+  if (b.id === 'spSettle') return spSave(true);
+  if (b.id === 'spDel'){
+    if (!confirm(`刪除「${sp.name || '此分帳'}」及其記帳紀錄？`)) return;
+    const pend = spPend(); pend[sp.id] = { del:true }; lsSet('splitsPending', pend);
+    S.splits = S.splits.filter(x => x.id !== sp.id); lsSet('splitsCfg', S.splits);
+    S.spEdit = null; renderSplits(); flushSplits(); toast('已刪除分帳');
+  }
+});
+
 /* ---------- 主畫面捷徑（manifest shortcuts）：?s=類別&i=項目 或 ?p=頁面 ---------- */
 function applyLaunchParams(){
   const q = new URLSearchParams(location.search); if (!q.toString()) return false;
@@ -1806,7 +2163,7 @@ setTimeout(() => { if ($('#remark').value && !cleanRemark()) $('#remark').value 
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('./sw.js').catch(() => {});
 if (!cfg.url) go('settings'); else {
   if (!applyLaunchParams()) go('input');
-  flushQ(); syncItems(); syncSettings(); loadInbox(true); syncTrips();
+  flushQ(); flushSplits(); syncItems(); syncSettings(); loadInbox(true); syncTrips();
   // 閒置時預載上兩個月（分析頁預設及環比用），同時累積常用備註
   // 預先載入：分析頁（上月及前月）、支出概覽的固定項目、趨勢數據；大多由本機快取即時取得，背景再更新
   setTimeout(() => { const m = todayStr().slice(0,7); [1,2].forEach(k => loadMonth(shiftYm(m,-k)).catch(() => {})); loadFixed().catch(() => {}); loadSummary().catch(() => {}); }, 1500);

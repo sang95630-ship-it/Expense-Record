@@ -1,7 +1,7 @@
 /**** 記帳簿 後端：貼到 Google Sheet → 擴充功能 → Apps Script ****/
 // TOKEN 不再寫在程式碼內：請到「專案設定 → 指令碼屬性」新增屬性 TOKEN（值 = 你的密碼）。
 // 之後更新 Code.gs 可直接整份貼上；更換 TOKEN 只需改屬性值，毋須重新部署。
-const API_VERSION = 7;            // 前端用來檢查 Code.gs 是否已更新
+const API_VERSION = 8;            // 前端用來檢查 Code.gs 是否已更新
 const BACKUP_FOLDER = '記帳簿備份'; // Google Drive 備份資料夾名稱
 const BACKUP_KEEP = 8;            // 保留最近 8 份（約 2 個月）
 const REC = 'Records', FIX = 'Fixed', ITEMS = 'Items', SETTINGS = 'Settings', INBOX = 'Inbox', MERCH = 'Merchants';
@@ -9,7 +9,7 @@ const WD_IDLE_DAYS = 3;           // 看門狗：連續 N 日沒有新增紀錄�
 const WD_INBOX_DAYS = 3;          // 看門狗：通知轉發器 N 日沒有回報便提醒（第 5 期啟用）
 // Amount 一律為港幣；外幣支出另記 Currency / FxRate（1 外幣 = ? HKD）/ OrigAmount（原幣金額）
 // Trip：旅程名稱（旅遊支出可標記所屬旅程，例如機票可在出發前購買）
-const REC_HEAD = ['ID', 'Date', 'Section', 'Item', 'Amount', 'Remark', 'CreatedAt', 'FixedID', 'Currency', 'FxRate', 'OrigAmount', 'Trip'];
+const REC_HEAD = ['ID', 'Date', 'Section', 'Item', 'Amount', 'Remark', 'CreatedAt', 'FixedID', 'Currency', 'FxRate', 'OrigAmount', 'Trip', 'SplitID'];
 // Cycle：M = 每月、Y = 每年（於 StartYm 的月份入帳）
 const FIX_HEAD = ['ID', 'Item', 'Amount', 'Remark', 'StartYm', 'Active', 'UpdatedAt', 'History', 'Cycle'];
 // 自訂快選項目；某 Section 沒有任何列時，前端使用內建預設
@@ -20,6 +20,8 @@ const SETTINGS_HEAD = ['Key', 'Value'];
 const INBOX_HEAD = ['ID', 'ReceivedAt', 'Source', 'Raw', 'Merchant', 'Currency', 'OrigAmount', 'Amount', 'TxDate', 'Status', 'RecordID', 'Suggest'];
 const MERCH_HEAD = ['Merchant', 'Section', 'Item', 'Remark', 'Mode', 'Count', 'UpdatedAt'];
 const TRIPS = 'Trips', TRIPS_HEAD = ['Name', 'Start', 'End', 'Currency', 'Note']; // Start／End 為純文字 yyyy-MM-dd
+const SPLITS = 'Splits', SPLITS_HEAD = ['ID', 'Name', 'Date', 'Currency', 'FxRate', 'Trip', 'Status', 'Data', 'UpdatedAt', 'SettledAt']; // 分帳（第 6 期）
+const SPLIT_REMIND_DAYS = 3;       // 分帳結算後 N 日仍有轉帳未清 → Signal 提醒一次
 const MEAL = '@meal'; // 項目「按時間」：早／午／晚餐由交易時間決定
 
 function tz_() { return SpreadsheetApp.getActive().getSpreadsheetTimeZone(); }
@@ -53,7 +55,7 @@ function isOn_(v) { return v === true || String(v).toUpperCase() === 'TRUE'; }
 /** 首次執行一次：建立工作表 + 每月 1 號凌晨 1 時的 trigger */
 function setup() {
   const ss = SpreadsheetApp.getActive();
-  [[REC, REC_HEAD], [FIX, FIX_HEAD], [ITEMS, ITEMS_HEAD], [SETTINGS, SETTINGS_HEAD], [INBOX, INBOX_HEAD], [MERCH, MERCH_HEAD], [TRIPS, TRIPS_HEAD]].forEach(([n, h]) => {
+  [[REC, REC_HEAD], [FIX, FIX_HEAD], [ITEMS, ITEMS_HEAD], [SETTINGS, SETTINGS_HEAD], [INBOX, INBOX_HEAD], [MERCH, MERCH_HEAD], [TRIPS, TRIPS_HEAD], [SPLITS, SPLITS_HEAD]].forEach(([n, h]) => {
     const sh = ss.getSheetByName(n) || ss.insertSheet(n);
     if (sh.getLastRow() === 0) { sh.appendRow(h); sh.setFrozenRows(1); }
   });
@@ -61,6 +63,7 @@ function setup() {
   sheet_(REC).getRange('B:B').setNumberFormat('yyyy-mm-dd');
   sheet_(FIX).getRange('E:E').setNumberFormat('@'); // 防止 2026-11 被轉成日期
   sheet_(TRIPS).getRange('B:C').setNumberFormat('@');
+  sheet_(SPLITS).getRange('C:C').setNumberFormat('@'); sheet_(SPLITS).getRange('J:J').setNumberFormat('@');
   ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
   ScriptApp.newTrigger('monthlyJob').timeBased().onMonthDay(1).atHour(1).create();
   ScriptApp.newTrigger('weeklyBackup').timeBased().onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(3).create();
@@ -189,6 +192,8 @@ function watchdog() {
   if (inbox && now - new Date(inbox) > WD_INBOX_DAYS * 864e5) alert('inbox', `手機通知轉發器已 ${WD_INBOX_DAYS} 日沒有回報，請檢查 Tasker 是否被系統關閉`);
   // 5. 預算：09:00–22:00 檢查，本月用量達 80%／100% 各提醒一次
   if (hour >= 9 && hour <= 22) budgetCheck_(ym);
+  // 6. 分帳催收（第 6 期）：結算後 N 日仍有轉帳未清，每個活動提醒一次
+  if (hour >= 9 && hour <= 22) splitCheck_(now);
   flushNotify_();
   p.setProperty('WD_SENT', JSON.stringify(sent));
   p.setProperty('LAST_WATCHDOG', now.toISOString());
@@ -247,6 +252,7 @@ function doGet(e) {
         .map(recObj_).sort((a, b) => b.date.localeCompare(a.date));
       return { rows: hit.slice(0, 300), count: hit.length, total: hit.reduce((a, r) => a + r.amount, 0) };
     }
+    if (p.action === 'splits') return { rows: splits_() };
     if (p.action === 'items') {
       const sh = sheet_(ITEMS), items = {};
       if (sh) sh.getDataRange().getValues().slice(1).filter(r => r[0] && r[1])
@@ -360,6 +366,15 @@ function write_(b) {
       const sh = sheet_(TRIPS);
       if (sh) { const v = sh.getDataRange().getValues(); for (let i = v.length - 1; i >= 1; i--) if (v[i][0] === b.name) sh.deleteRow(i + 1); }
       if (b.untag) { const rv = rec.getDataRange().getValues(); for (let i = 1; i < rv.length; i++) if (rv[i][11] === b.name) rec.getRange(i + 1, 12).setValue(''); }
+      return {};
+    }
+    case 'saveSplit': return saveSplit_(b, rec);
+    case 'deleteSplit': {
+      const sid = String(b.id || ''); if (!sid) throw new Error('資料無效');
+      const sh = sheet_(SPLITS), row = sh ? findRow_(sh, sid) : 0;
+      if (row) sh.deleteRow(row);
+      const rv = rec.getDataRange().getValues();
+      for (let i = rv.length - 1; i >= 1; i--) if (rv[i][12] === sid) rec.deleteRow(i + 1);
       return {};
     }
     case 'saveSettings': {
@@ -555,7 +570,7 @@ function recObj_(r) {
     id: r[0], date: ymd_(r[1]), section: r[2], item: r[3], amount: Number(r[4]), remark: String(r[5] || ''),
     createdAt: r[6] instanceof Date ? r[6].toISOString() : String(r[6] || ''), fixedId: r[7] || '',
     currency: String(r[8] || 'HKD'), fxRate: Number(r[9]) || 1,
-    origAmount: r[10] === '' || r[10] == null ? Number(r[4]) : Number(r[10]), trip: String(r[11] || '')
+    origAmount: r[10] === '' || r[10] == null ? Number(r[4]) : Number(r[10]), trip: String(r[11] || ''), splitId: String(r[12] || '')
   };
 }
 
@@ -568,4 +583,59 @@ function fixObj_(r) {
 
 function json_(o) {
   return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
+}
+
+/* ============ 分帳（第 6 期） ============
+ * Splits 每個活動一行；Data 為 JSON：{ people, expenses, done, transfers:[{from,to,amt,done}], unit }
+ * 「我」的份額由前端計算後以 records 傳入，寫入 Records（SplitID 欄）；每次儲存以 SplitID 同步：多出的刪除、已有的更新、新的新增 */
+function splits_() {
+  const sh = sheet_(SPLITS); if (!sh) return [];
+  return sh.getDataRange().getValues().slice(1).filter(r => r[0]).map(r => {
+    let data = {}; try { data = JSON.parse(r[7] || '{}'); } catch (e) {}
+    return { id: String(r[0]), name: String(r[1]), date: ymd_(r[2]), currency: String(r[3] || 'HKD'), fxRate: Number(r[4]) || 1, trip: String(r[5] || ''),
+      status: String(r[6] || 'open'), data: data, updatedAt: r[8] instanceof Date ? r[8].toISOString() : String(r[8] || ''), settledAt: String(r[9] || '') };
+  });
+}
+function saveSplit_(b, rec) {
+  const sp = b.split || {}, sid = String(sp.id || '');
+  if (!sid || !String(sp.name || '').trim() || !/^\d{4}-\d{2}-\d{2}$/.test(sp.date)) throw new Error('分帳資料無效');
+  const cur = String(sp.currency || 'HKD').toUpperCase(), rate = cur === 'HKD' ? 1 : Number(sp.fxRate);
+  if (!(rate > 0)) throw new Error('匯率無效');
+  const recs = (b.records || []).filter(x => x && x.id && Number(x.amount) > 0 && ['旅遊', '日常', '其他'].indexOf(x.section) >= 0);
+  const sh = ensureSheet_(SPLITS, SPLITS_HEAD); sh.getRange('C:C').setNumberFormat('@'); sh.getRange('J:J').setNumberFormat('@');
+  const vals = [sid, String(sp.name).trim().slice(0, 30), sp.date, cur, rate, String(sp.trip || ''),
+    ['open', 'settled', 'done'].indexOf(sp.status) >= 0 ? sp.status : 'open', JSON.stringify(sp.data || {}), new Date(), String(sp.settledAt || '')];
+  const row = findRow_(sh, sid);
+  if (row) sh.getRange(row, 1, 1, vals.length).setValues([vals]); else sh.appendRow(vals);
+  // 我的份額 → Records
+  ensureRecHead_();
+  const want = {}; recs.forEach(x => want[x.id] = x);
+  const line = x => [x.date || sp.date, x.section, String(x.item || ''), round2_(Number(x.amount)), String(x.remark || '')];
+  const tail = x => [cur, rate, cur === 'HKD' ? round2_(Number(x.amount)) : Number(x.origAmount), x.section === '旅遊' ? String(x.trip || '') : '', sid];
+  const rv = rec.getDataRange().getValues();
+  for (let i = rv.length - 1; i >= 1; i--) {
+    if (rv[i][12] !== sid) continue;
+    const x = want[rv[i][0]];
+    if (!x) { rec.deleteRow(i + 1); continue; }
+    rec.getRange(i + 1, 2, 1, 5).setValues([line(x)]);
+    rec.getRange(i + 1, 9, 1, 5).setValues([tail(x)]);
+    delete want[x.id];
+  }
+  Object.keys(want).forEach(id => { const x = want[id]; rec.appendRow([id].concat(line(x), [new Date(), ''], tail(x))); });
+  return {};
+}
+function splitCheck_(now) {
+  const sh = sheet_(SPLITS); if (!sh) return;
+  const p = props_(), sent = JSON.parse(p.getProperty('SPLIT_SENT') || '{}'); let changed = false;
+  sh.getDataRange().getValues().slice(1).forEach(r => {
+    if (!r[0] || r[6] !== 'settled' || sent[r[0]]) return;
+    const at = new Date(r[9]); if (!r[9] || isNaN(at) || now - at < SPLIT_REMIND_DAYS * 864e5) return;
+    let d; try { d = JSON.parse(r[7] || '{}'); } catch (e) { return; }
+    const open = (d.transfers || []).filter(t => !t.done); if (!open.length) return;
+    const cur = String(r[3] || 'HKD'), unit = Number(d.unit) || 100;
+    sent[r[0]] = fmt_(now, 'yyyy-MM-dd'); changed = true;
+    notify_(`💸 分帳「${r[1]}」已結算 ${Math.floor((now - at) / 864e5)} 日，仍有 ${open.length} 筆未清：`
+      + open.slice(0, 6).map(t => `${t.from}→${t.to} ${money_(cur, t.amt / unit)}`).join('；'));
+  });
+  if (changed) p.setProperty('SPLIT_SENT', JSON.stringify(sent));
 }
