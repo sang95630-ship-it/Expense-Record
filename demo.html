@@ -1898,7 +1898,7 @@ $('#tfSave').addEventListener('click', async () => {
    「我」的份額寫入 Records（SplitID 欄）；待收／待付不計入支出。
    儲存先寫入本機（splitsCfg＋splitsPending），背景同步至 Sheet，失敗會於 30 秒／回到前台時重試。 */
 const ME = '我', SPLIT_REMIND_DAYS = 3;
-const SPLIT_PEOPLE_DEF = ['阿明', '小美', '阿傑', 'Ken', 'Joyce']; // 未在設定頁修改時的常用參加者（Settings 鍵 split.people）
+const SPLIT_PEOPLE_DEF = ['阿明', '小美', '阿傑', 'Ken', 'Joyce']; // 常用參加者存於 Settings 鍵 split.people（設定頁編輯），不寫入程式碼
 const spPeopleList = () => { const v = S.settings['split.people']; return v == null ? SPLIT_PEOPLE_DEF : String(v).split(/[,，、]/).map(x => x.trim()).filter(x => x && x !== '-'); };
 const mealOfTs = iso => { const h = new Date(iso).getHours(), m = h >= 5 && h < 11 ? '早餐' : h >= 11 && h < 16 ? '午餐' : h >= 17 && h < 23 ? '晚餐' : '零食';
   return (SECTIONS['日常'] || []).some(x => x[0] === m) ? m : spDefItem('日常'); };

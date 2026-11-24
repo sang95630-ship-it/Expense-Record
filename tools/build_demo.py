@@ -40,7 +40,7 @@ banner = ('<div class="demo-banner" role="note"><span>👋</span><div><b>記帳�
 s = sub(s, '<section class="page" id="p-input">\n', '<section class="page" id="p-input">\n      ' + banner)
 
 # 常用參加者換成虛構名字
-s = sub(s, "const SPLIT_PEOPLE_DEF = ['Pang', 'Kobe', 'Ming', '01', 'Roy', 'RG', 'Wade'];", "const SPLIT_PEOPLE_DEF = ['阿明', '小美', '阿傑', 'Ken', 'Joyce'];")
+s = sub(s, "const SPLIT_PEOPLE_DEF = [];", "const SPLIT_PEOPLE_DEF = ['阿明', '小美', '阿傑', 'Ken', 'Joyce'];")
 
 # 模擬伺服器須在主程式之前載入
 s = sub(s, '<script>\nconst DEFAULT_SECTIONS', '<script>\n' + mock + '\n</script>\n<script>\nconst DEFAULT_SECTIONS')
