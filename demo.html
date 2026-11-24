@@ -15,13 +15,13 @@
 <style>
 :root{
   --bg:#ECEFF1;--surface:#FFFFFF;--surface-2:#F4F6F7;--ink:#263238;--muted:#607D8B;--line:#DCE3E6;
-  --primary:#455A64;--primary-ink:#FFFFFF;--soft:#CFD8DC;--side:#37474F;--side-ink:#ECEFF1;--danger:#B4544B;--warn-bg:#FFE0B2;--warn-ink:#8A4B00;--st-ok:#2E7D4F;--st-warn:#B26A00;
+  --primary:#455A64;--primary-ink:#FFFFFF;--soft:#CFD8DC;--side:#37474F;--side-ink:#ECEFF1;--danger:#B4544B;--warn-bg:#FFE0B2;--warn-ink:#8A4B00;--st-ok:#2E7D4F;--st-warn:#B26A00;--hl-mid:#B5803A;
   color-scheme:light;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
     --bg:#151C20;--surface:#1E272C;--surface-2:#263238;--ink:#ECEFF1;--muted:#90A4AE;--line:#31414A;
-    --primary:#90A4AE;--primary-ink:#151C20;--soft:#2C3A41;--side:#10161A;--side-ink:#CFD8DC;--danger:#E08A80;--warn-bg:#5A3A12;--warn-ink:#FFCC80;--st-ok:#6CC38E;--st-warn:#F0A73A;
+    --primary:#90A4AE;--primary-ink:#151C20;--soft:#2C3A41;--side:#10161A;--side-ink:#CFD8DC;--danger:#E08A80;--warn-bg:#5A3A12;--warn-ink:#FFCC80;--st-ok:#6CC38E;--st-warn:#F0A73A;--hl-mid:#F4C27A;
     color-scheme:dark;
   }
 }
@@ -199,6 +199,11 @@ details.wk>summary::-webkit-details-marker{display:none}
 details.wk .day-head{display:flex;justify-content:space-between;padding:10px 0 2px;border-top:1px solid var(--line)}
 details.wk .day-head:first-of-type{border-top:0}
 details.wk .rec:last-child{border-bottom:0}
+/* 大額高亮（只限可控消費）：≥HK$200 左側色條＋金額橙色；HK$100–199 金額淡橙 */
+.rec.hl-big{position:relative}
+.rec.hl-big::before{content:"";position:absolute;left:-16px;top:6px;bottom:6px;width:4px;border-radius:0 3px 3px 0;background:var(--st-warn)}
+.rec.hl-big .amt{color:var(--st-warn)}
+.rec.hl-mid .amt{color:var(--hl-mid)}
 .ib-badge{margin-left:auto;background:var(--danger);color:#fff;border-radius:999px;font-size:11px;padding:1px 7px;font-weight:700}
 .ib-banner{display:flex;width:100%;align-items:center;gap:8px;border:0;border-radius:12px;padding:10px 14px;margin:0 0 12px;background:var(--warn-bg);color:var(--warn-ink);font-weight:500;text-align:left}
 .ib-banner span:last-child{margin-left:auto}
@@ -1170,9 +1175,11 @@ async function renderRecent(){
     box.innerHTML = (q.length ? q.map(r => recRow(r, false)).join('') : '') + `<p class="muted small">${esc(errMsg(e))}</p>`;
   }
 }
-function recRow(r, withDel, noDate){
+const HL_BIG = 200, HL_MID = 100; // 大額高亮門檻（HKD）
+function recRow(r, withDel, noDate, hl){
+  const lv = hl && r.section !== '固定' ? (r.amount >= HL_BIG ? ' hl-big' : r.amount >= HL_MID ? ' hl-mid' : '') : '';
   const sub = `${noDate ? '' : r.date.slice(5).replace('-','/') + '，'}${r.section}${r.remark ? '，'+esc(r.remark) : ''}${r.pending ? '，待同步' : ''}`;
-  return `<div class="rec"><span class="em">${iconOf(r.section,r.item)}</span>
+  return `<div class="rec${lv}"><span class="em">${iconOf(r.section,r.item)}</span>
     <div class="main"><div>${esc(r.item)}</div><div class="sub">${sub}</div></div>
     <span class="amt">${amtHtml(r)}</span>
     ${withDel ? `<button class="ghost" data-edit="${esc(r.id)}">修改</button>` : ''}</div>`;
@@ -1308,7 +1315,7 @@ function weekGroups(rows, showFix){
     const body = Object.keys(days).sort().reverse().map(dt => {
       const list = days[dt].sort((a,b) => String(b.createdAt).localeCompare(String(a.createdAt)));
       const d = new Date(y, m-1, Number(dt.slice(8,10)));
-      return `<div class="day-head"><span>${m}月${d.getDate()}日（週${'日一二三四五六'[d.getDay()]}）</span><span class="num">${money(round2(sum(list)))}</span></div>` + list.map(r => recRow(r, true, true)).join('');
+      return `<div class="day-head"><span>${m}月${d.getDate()}日（週${'日一二三四五六'[d.getDay()]}）</span><span class="num">${money(round2(sum(list)))}</span></div>` + list.map(r => recRow(r, true, true, true)).join('');
     }).join('');
     return `<details class="wk" data-wk="${key}"${open ? ' open' : ''}><summary>
       <div class="wk-top"><b>${label}</b>${isNow ? '<span class="wk-now">本週</span>' : ''}<span class="cnt">${w.rows.length} 筆</span><span class="tot">${money(round2(tot))}</span>${FOLD_BTN}</div>
