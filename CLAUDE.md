@@ -66,6 +66,12 @@
 | + | 主畫面長按捷徑（manifest `shortcuts`）：記早餐／午餐／晚餐（`?s=日常&i=…`，直接聚焦金額）、待確認（`?p=inbox`）；圖示 `sc-*.png`；`sw.js` VERSION 升至 v2 | ✅ |
 | + | PWA：`manifest.json` + `sw.js`（index.html 網絡優先、其他靜態檔快取優先、Google Fonts SWR；GAS／匯率 API 不快取）；圖示 `icon.svg`／`icon-192/512.png`／`icon-maskable-512.png`／`apple-touch-icon.png` | ✅ |
 
+## 體驗版（demo.html）
+- 供分享給他人一次性體驗的單一 HTML：`python3 tools/build_demo.py` 由 index.html 產生 `demo.html`，**修改 index.html 後須重新執行並一併 commit**
+- `tools/demo-mock.js`：頁內模擬伺服器（攔截 fetch，實作所有 GET／POST action）＋虛構示範數據（近 6 個月紀錄、5 個固定項目、東京旅程、2 筆待確認）；匯率用固定值
+- 以記憶體取代 localStorage／sessionStorage：不會讀寫正式版的設定、TOKEN 或佇列（即使在同一網域開啟），重新整理即重設
+- 移除 PWA（manifest、圖示、Service Worker），隱藏 Details、連結表單、首次設定步驟及同步狀態；頁頂顯示體驗版說明
+
 ## Google Sheet 結構
 - `Records`: ID | Date | Section | Item | Amount | Remark | CreatedAt | FixedID | Currency | FxRate | OrigAmount | Trip
   - Amount 一律為 HKD（分析用）；外幣支出：OrigAmount 為原幣金額，FxRate 為「1 外幣 = ? HKD」；舊表由 `ensureRecHead_()` 自動補欄位標題
