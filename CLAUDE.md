@@ -29,7 +29,7 @@
 | 3 | 「固定」項目每月 1 號自動入帳（GAS time-driven trigger `monthlyJob`，以 FixedID+月份防重複） | ✅ |
 | 4 | 日期預設今天，點擊以滾輪（年／月／日 scroll-snap）選擇，類似 iOS picker | ✅ |
 | 5 | 金額 + 備註輸入 | ✅ |
-| 6 | 可收合 sidebar：Input / Expense / Details / Monthly Analysis（+ 設定） | ✅ |
+| 6 | 可收合 sidebar：新增支出／支出概覽／Google Sheet（原 Details）／每月分析（+ 旅程、分帳、待確認、搜尋、設定），標籤全中文 | ✅ |
 | 7 | Blue gray 主色調（支援系統深色模式） | ✅ |
 | 8 | Monthly Analysis：預設顯示上個月；SVG 圓餅圖（按類別／按項目）+ 最大 3 筆支出 + 環比 % + 固定支出佔比 | ✅ |
 | + | Expense 頁可「修改／停用／重新啟用」固定項目（因費用常加價）；可選同時更新本月已入帳金額；History 欄記錄加價（例如 `2026-12: 68→78`） | ✅ |
@@ -45,7 +45,7 @@
 | + | 金額輸入即時加千位分隔號（`fmtAmountInput`，解析用 `num()` 去逗號） | ✅ |
 | + | 常用備註快選：每個 section+項目顯示最常用 3 個備註（localStorage `remarkLog`，從已載入月份及新增紀錄累積，上限 1500 筆） | ✅ |
 | + | 樂觀寫入：按「儲存」即寫入本機佇列並更新畫面（<0.1 秒），背景同步至 GAS；失敗保留佇列，於 online／回到前台／每 30 秒重試；未同步紀錄可直接刪除 | ✅ |
-| + | 選擇類別後，鍵盤彈出時自動向下捲，令「儲存支出」按鈕位於鍵盤上方（`visualViewport` resize + `keepSaveVisible()`；頁面太短時臨時加底部空白）；儲存後收起鍵盤並平滑捲回頂部；「已儲存」提示顯示項目＋金額（外幣附 ≈HK$，非今天附日期），顯示 3.2 秒；提示旁「復原」按鈕（↶ 圖示＋倒數圈，aria-label「復原」）：新紀錄於 `hold` 暫緩同步約 3.5 秒，復原即從佇列移除並把內容填回表格 | ✅ |
+| + | 選擇類別後，鍵盤彈出時自動向下捲，令「確認」（儲存支出）按鈕位於鍵盤上方（`visualViewport` resize + `keepSaveVisible()`；頁面太短時臨時加底部空白）；儲存後收起鍵盤並平滑捲回頂部；「已儲存」提示顯示項目＋金額（外幣附 ≈HK$，非今天附日期），顯示 3.2 秒；提示旁「復原」按鈕（↶ 圖示＋倒數圈，aria-label「復原」）：新紀錄於 `hold` 暫緩同步約 3.5 秒，復原即從佇列移除並把內容填回表格 | ✅ |
 | + | 本機資料快取（stale-while-revalidate）：每月紀錄（最多 8 個月）、固定項目、趨勢數據存於 localStorage `dataCache`；打開時即時顯示上次資料，背景更新（每項每次使用一次，`revalidate`），有改動才重畫，期間頂部顯示「更新中…」；寫入後經 `S.cache`（Proxy）刪除／`dropFixed()`／`dropSummary()`／`resetCache()` 同時刪除本機副本，下次直接取最新 | ✅ |
 | + | 預先載入：啟動 1.5 秒後載入上兩個月、固定項目及趨勢數據；切換月份時預取相鄰月份 | ✅ |
 | + | 效能記錄（設定頁「效能」卡）：每個請求的次數、中位及最慢時間、伺服器處理時間（Code.gs 回傳 `ms`）、快取命中次數；最近 300 筆存於 localStorage `perfLog` | ✅ |
@@ -69,7 +69,7 @@
 | + | 旅程（第 4 期）：Sheet `Trips`（Name／Start／End／Currency／Note），`Records.Trip` 欄；新增支出選「旅遊」時顯示旅程選單，預設為日期所在旅程或 60 日內出發的旅程（出發前買機票），並切換至旅程預設幣種；短訊自動入帳的旅遊支出按日期自動標記（`tripFor_`）；旅程頁顯示合計、筆數、每日平均、外幣原額及按項目分佈；改名同步更新紀錄；修改紀錄可補選旅程 | ✅ |
 | + | 分帳（第 6a 期，側欄 🧾）：活動＋參加者（「我」固定）＋一筆或多筆支出，每筆選付款人及分攤方式（平均〔可剔除部分人〕／按份數／指定金額）；以最小貨幣單位整數計算（`spUnit`，JPY／KRW 無小數），餘數按小數部分大者分配，各人差額加總必為 0；建議轉帳為**最少次數**（`spMinTx`：子集 DP 求最多「加總為 0」的分組，轉帳數＝有差額人數−組數，組內貪婪；超過 16 人改用貪婪），每筆可標記已收／已付（`data.done` 以 `from\|to\|amt` 為 key，金額改變即重置）；「確認」設 `settledAt`（狀態 未確認→待清數，開始計催收），複製圖示按鈕（`spCopy`，不儲存）複製 WhatsApp 文字（`spText`：英文精簡，日期 DD/MM，「我」寫作 Me，含合計、各筆支出〔多於一筆時〕、各人應付〔相同時只寫 Each pays〕及轉帳）；「我」的份額按每筆支出寫入 Records（ID `<splitId>_<expId>`，`SplitID` 欄，備註「AA：活動·內容」），待收／待付不計入支出；修改分帳紀錄會轉到分帳頁；常用參加者（localStorage `splitPeople`）；本機 `splitsCfg`＋`splitsPending` 樂觀寫入，30 秒／回前台重試；看門狗確認後 3 日仍有**涉及「我」**的轉帳未清經 Signal 提醒一次（`SPLIT_SENT`） | ✅ |
 | + | 分帳計算工具模式：參加者可移除「我」（由現有紀錄／通知轉來的除外），即只計算朋友之間的最少轉帳，不寫入記帳簿、不計入待收、不觸發催收；快選第一位為「我」以便加回 | ✅ |
-| + | 分帳第 6b 期：新增支出頁「AA 分帳」按鈕（帶入日期／類別／項目／幣種／金額／備註，儲存後清空表格）；「待確認」通知「AA 分帳」（`data.src.inbox`，伺服器把通知標記 `split`）；修改紀錄「轉為分帳」（`data.src.rec`，伺服器刪除原全額紀錄，未同步的從佇列移除），全部經 `spFrom()`；支出概覽頂部「🧾 AA 待收」（`spOutstanding()`，點擊到分帳頁）；旅程頁顯示分帳份額已計入及代墊待收（`spTripInfo`）；常用參加者於設定頁編輯（Settings `split.people`，程式碼內預設為空（`SPLIT_PEOPLE_DEF = []`，名字不入 repo）；體驗版換成虛構名字），其後附上 `splitPeople` 常用名字 | ✅ |
+| + | 分帳第 6b 期：新增支出頁「AA」按鈕（旁邊儲存按鈕文字為「確認」）（帶入日期／類別／項目／幣種／金額／備註，儲存後清空表格）；「待確認」通知「AA 分帳」（`data.src.inbox`，伺服器把通知標記 `split`）；修改紀錄「轉為分帳」（`data.src.rec`，伺服器刪除原全額紀錄，未同步的從佇列移除），全部經 `spFrom()`；支出概覽頂部「🧾 AA 待收」（`spOutstanding()`，點擊到分帳頁）；旅程頁顯示分帳份額已計入及代墊待收（`spTripInfo`）；常用參加者於設定頁編輯（Settings `split.people`，程式碼內預設為空（`SPLIT_PEOPLE_DEF = []`，名字不入 repo）；體驗版換成虛構名字），其後附上 `splitPeople` 常用名字 | ✅ |
 | + | 主畫面長按捷徑（manifest `shortcuts`）：記早餐／午餐／晚餐（`?s=日常&i=…`，直接聚焦金額）、待確認（`?p=inbox`）；圖示 `sc-*.png`；`sw.js` VERSION 升至 v2 | ✅ |
 | + | PWA：`manifest.json` + `sw.js`（index.html 網絡優先、其他靜態檔快取優先、Google Fonts SWR；GAS／匯率 API 不快取）；圖示 `icon.svg`／`icon-192/512.png`／`icon-maskable-512.png`／`apple-touch-icon.png` | ✅ |
 

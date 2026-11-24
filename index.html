@@ -355,10 +355,10 @@ a{color:inherit}
       <button class="icon-btn" id="collapseBtn" aria-label="收起或展開側欄">☰</button>
       <span class="brand-name label">記帳簿</span>
     </div>
-    <button class="nav-item" data-page="input"><span class="ni">✏️</span><span class="label">Input</span></button>
-    <button class="nav-item" data-page="expense"><span class="ni">📋</span><span class="label">Expense</span></button>
-    <button class="nav-item" data-page="details"><span class="ni">📑</span><span class="label">Details</span><span class="ext label">↗</span></button>
-    <button class="nav-item" data-page="analysis"><span class="ni">📈</span><span class="label">Monthly Analysis</span></button>
+    <button class="nav-item" data-page="input"><span class="ni">✏️</span><span class="label">新增支出</span></button>
+    <button class="nav-item" data-page="expense"><span class="ni">📋</span><span class="label">支出概覽</span></button>
+    <button class="nav-item" data-page="details"><span class="ni">📑</span><span class="label">Google Sheet</span><span class="ext label">↗</span></button>
+    <button class="nav-item" data-page="analysis"><span class="ni">📈</span><span class="label">每月分析</span></button>
     <div class="spacer"></div>
     <button class="nav-item" data-page="trips"><span class="ni">🧳</span><span class="label">旅程</span></button>
     <button class="nav-item" data-page="splits"><span class="ni">🧾</span><span class="label">分帳</span></button>
@@ -401,7 +401,7 @@ a{color:inherit}
         <label class="trip-row" id="tripRow" hidden>🧳<select class="text-in" id="tripSel" aria-label="旅程"></select></label>
         <div class="seg cy-seg" id="cycleSeg" hidden><button type="button" data-cy="M">每月</button><button type="button" data-cy="Y">每年</button></div>
         <p class="hint" id="fixedHint" hidden></p>
-        <div class="row-btns save-row"><button class="ghost" id="aaBtn" type="button" title="與朋友分帳，只記錄你的份額">AA 分帳</button><button class="primary" id="saveBtn">儲存支出</button></div>
+        <div class="row-btns save-row"><button class="ghost" id="aaBtn" type="button" title="AA 分帳：只記錄你的份額" aria-label="AA 分帳">AA</button><button class="primary" id="saveBtn">確認</button></div>
       </div>
       <h2>本月最近紀錄</h2>
       <div class="card list" id="recentList"><p class="muted small">載入中…</p></div>
@@ -1001,7 +1001,7 @@ $('#cycleSeg').addEventListener('click', e => { const b = e.target.closest('[dat
 $$('.tab').forEach(b => b.addEventListener('click', () => { S.section = b.dataset.s; S.item = null; S.cycle = 'M'; renderTabs(); setCur(S.section === '旅遊' ? (tripObj(S.trip)?.currency || lsGet('lastTravelCur', 'HKD')) : 'HKD'); }));
 $('#itemGrid').addEventListener('click', e => { const c = e.target.closest('.chip'); if (!c) return; S.item = c.dataset.item; renderTabs(); $('#amount').focus(); keepSaveVisible(); });
 
-/* ---------- 鍵盤彈出時，確保「儲存支出」按鈕不被遮住 ---------- */
+/* ---------- 鍵盤彈出時，確保「確認」按鈕不被遮住 ---------- */
 const VV = window.visualViewport;
 let kbUntil = 0, kbT;
 function adjustForKeyboard(){
@@ -1552,7 +1552,7 @@ async function renderInbox(){
       <label class="field">備註<input class="text-in" data-f="remark" type="text" value="${esc(sg.remark || '')}" placeholder="例如店名" autocomplete="off"></label>
       ${sg.generic ? '' : `<label class="field">以後「${esc(r.merchant)}」<select class="text-in" data-f="remember">
         <option value="auto"${sg.rule ? '' : ' selected'}>自動入帳為此類別</option><option value="ask"${sg.rule ? ' selected' : ''}>每次詢問（預填此類別）</option><option value="">不記住</option></select></label>`}
-      <div class="row-btns"><button class="ghost" type="button" data-act="skip">略過</button><button class="ghost" type="button" data-act="split">AA 分帳</button><button class="primary" type="button" data-act="ok">確認入帳</button></div>
+      <div class="row-btns"><button class="ghost" type="button" data-act="skip">略過</button><button class="ghost" type="button" data-act="split" aria-label="AA 分帳">AA</button><button class="primary" type="button" data-act="ok">確認入帳</button></div>
       <details><summary>短訊原文</summary><p class="ib-raw">${esc(r.raw)}</p></details>
     </div>`;
   }).join('') : '<div class="card"><p class="muted">沒有待確認的消費通知。</p></div>';
