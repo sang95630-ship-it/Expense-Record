@@ -2151,12 +2151,19 @@ function spRenderRes(){
     <div class="sp-sub">建議轉帳（${c.tx.length} 筆${c.tx.length > 1 && c.optimal ? '，已是最少次數' : ''}）</div>
     ${c.tx.length ? c.tx.map(t => spTxHtml(t, M)).join('') : '<p class="muted small">不需要轉帳。</p>'}`;
 }
+// 複製文字（英文、精簡，日期 DD/MM）：標題、合計、各筆支出（多於一筆時）、各人應付、轉帳
 function spText(sp, c){
-  const M = v => spMoney(v, c.unit, sp.currency), P = sp.data.people;
-  const d = sp.date.slice(5).replace('-','/');
-  return [`🧾 ${sp.name.includes(d) ? sp.name : `${sp.name}（${d}）`}`, `合計 ${M(c.total)}，${P.length} 人`,
-    ...sp.data.expenses.map((e,i) => `· ${e.desc || (sp.data.expenses.length > 1 ? `支出 ${i + 1}` : '支出')} ${M(c.per[i].T)}（${e.payer}付${e.mode === 'w' ? '，按份數' : e.mode === 'x' ? '，按指定金額' : P.some(p => e.inc[p] === false) ? `，${P.filter(p => e.inc[p] !== false).join('、')}分` : ''}）`),
-    '—', ...(c.tx.length ? c.tx.map(t => `${t.from} → ${t.to} ${M(t.amt)}${t.done ? ' ✓' : ''}`) : ['不需要轉帳'])].join('\n');
+  const M = v => spMoney(v, c.unit, sp.currency).replace(' ', ''), P = sp.data.people, N = p => p === ME ? 'Me' : p;
+  const [, mm, dd] = sp.date.split('-'), d = `${dd}/${mm}`, md = `${mm}/${dd}`;
+  const title = /^分帳 \d\d\/\d\d$/.test(sp.name) ? 'Split' : sp.name.replace(md, '').trim() || 'Split';
+  const exps = sp.data.expenses, how = e => e.mode === 'w' ? ' (by shares)' : e.mode === 'x' ? ' (custom)'
+    : P.some(p => e.inc[p] === false) ? ` (${P.filter(p => e.inc[p] !== false).map(N).join(', ')})` : '';
+  const owe = P.map(p => c.owe[p]), same = owe.every(v => v === owe[0]);
+  return [`🧾 ${title} · ${d}`,
+    `Total ${M(c.total)} · ${P.length} people` + (exps.length === 1 ? ` · paid by ${N(exps[0].payer)}${how(exps[0])}` : ''),
+    ...(exps.length > 1 ? exps.map((e,i) => `• ${e.desc || `Item ${i + 1}`} ${M(c.per[i].T)} – ${N(e.payer)}${how(e)}`) : []),
+    same ? `Each pays ${M(owe[0])}` : `Shares: ${P.map(p => `${N(p)} ${M(c.owe[p])}`).join(', ')}`,
+    ...(c.tx.length ? ['Transfers:', ...c.tx.map(t => `${N(t.from)} → ${N(t.to)} ${M(t.amt)}${t.done ? ' ✓' : ''}`)] : ['No transfers needed'])].join('\n');
 }
 // 即時反映來源：移除被取代的紀錄（未同步的直接從佇列移除）、移除已處理的通知、清空新增支出表格
 function spApplySrc(sp){
