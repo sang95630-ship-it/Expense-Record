@@ -1,7 +1,7 @@
 /**** 記帳簿 後端：貼到 Google Sheet → 擴充功能 → Apps Script ****/
 // TOKEN 不再寫在程式碼內：請到「專案設定 → 指令碼屬性」新增屬性 TOKEN（值 = 你的密碼）。
 // 之後更新 Code.gs 可直接整份貼上；更換 TOKEN 只需改屬性值，毋須重新部署。
-const API_VERSION = 8;            // 前端用來檢查 Code.gs 是否已更新
+const API_VERSION = 9;            // 前端用來檢查 Code.gs 是否已更新
 const BACKUP_FOLDER = '記帳簿備份'; // Google Drive 備份資料夾名稱
 const BACKUP_KEEP = 8;            // 保留最近 8 份（約 2 個月）
 const REC = 'Records', FIX = 'Fixed', ITEMS = 'Items', SETTINGS = 'Settings', INBOX = 'Inbox', MERCH = 'Merchants';
@@ -607,8 +607,15 @@ function saveSplit_(b, rec) {
     ['open', 'settled', 'done'].indexOf(sp.status) >= 0 ? sp.status : 'open', JSON.stringify(sp.data || {}), new Date(), String(sp.settledAt || '')];
   const row = findRow_(sh, sid);
   if (row) sh.getRange(row, 1, 1, vals.length).setValues([vals]); else sh.appendRow(vals);
-  // 我的份額 → Records
+  // 來源（第 6b 期）：由現有紀錄轉為分帳 → 刪除原本的全額紀錄；由待確認通知轉為分帳 → 標記通知已處理。重送亦安全
   ensureRecHead_();
+  const src = (sp.data && sp.data.src) || {};
+  if (src.rec) { const r = findRow_(rec, src.rec); if (r && !rec.getRange(r, 13).getValue()) rec.deleteRow(r); }
+  if (src.inbox) {
+    const ib = sheet_(INBOX), r = ib ? findRow_(ib, src.inbox) : 0;
+    if (r && ib.getRange(r, 10).getValue() === 'pending') ib.getRange(r, 10, 1, 2).setValues([['split', sid]]);
+  }
+  // 我的份額 → Records
   const want = {}; recs.forEach(x => want[x.id] = x);
   const line = x => [x.date || sp.date, x.section, String(x.item || ''), round2_(Number(x.amount)), String(x.remark || '')];
   const tail = x => [cur, rate, cur === 'HKD' ? round2_(Number(x.amount)) : Number(x.origAmount), x.section === '旅遊' ? String(x.trip || '') : '', sid];
@@ -631,10 +638,10 @@ function splitCheck_(now) {
     if (!r[0] || r[6] !== 'settled' || sent[r[0]]) return;
     const at = new Date(r[9]); if (!r[9] || isNaN(at) || now - at < SPLIT_REMIND_DAYS * 864e5) return;
     let d; try { d = JSON.parse(r[7] || '{}'); } catch (e) { return; }
-    const open = (d.transfers || []).filter(t => !t.done); if (!open.length) return;
+    const open = (d.transfers || []).filter(t => !t.done && (t.from === '我' || t.to === '我')); if (!open.length) return; // 只提醒涉及「我」的轉帳
     const cur = String(r[3] || 'HKD'), unit = Number(d.unit) || 100;
     sent[r[0]] = fmt_(now, 'yyyy-MM-dd'); changed = true;
-    notify_(`💸 分帳「${r[1]}」已結算 ${Math.floor((now - at) / 864e5)} 日，仍有 ${open.length} 筆未清：`
+    notify_(`💸 分帳「${r[1]}」已結算 ${Math.floor((now - at) / 864e5)} 日，仍有 ${open.length} 筆涉及你的轉帳未清：`
       + open.slice(0, 6).map(t => `${t.from}→${t.to} ${money_(cur, t.amt / unit)}`).join('；'));
   });
   if (changed) p.setProperty('SPLIT_SENT', JSON.stringify(sent));

@@ -311,6 +311,9 @@ select.text-in{appearance:auto;padding:10px 12px}
 a{color:inherit}
 @media (prefers-reduced-motion: reduce){ *{transition:none!important;scroll-behavior:auto!important} }
 /* 分帳 */
+.save-row .ghost{flex:0 0 auto}
+.aa-line{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;margin:10px 0 2px;padding:9px 12px;border:0;border-radius:12px;background:var(--surface-2);color:var(--ink);font-size:13px;text-align:left}
+.sp-src{margin:8px 0 0;padding:8px 10px;border-radius:10px;background:var(--warn-bg);color:var(--warn-ink)}
 .sp-chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:10px 0 0}
 .sp-chip{border:1px solid var(--line);background:var(--surface-2);border-radius:999px;padding:5px 12px;font-size:14px;color:var(--ink);display:inline-flex;align-items:center}
 .sp-chip.on{background:var(--primary);color:var(--primary-ink);border-color:var(--primary)}
@@ -397,7 +400,7 @@ a{color:inherit}
         <label class="trip-row" id="tripRow" hidden>🧳<select class="text-in" id="tripSel" aria-label="旅程"></select></label>
         <div class="seg cy-seg" id="cycleSeg" hidden><button type="button" data-cy="M">每月</button><button type="button" data-cy="Y">每年</button></div>
         <p class="hint" id="fixedHint" hidden></p>
-        <button class="primary" id="saveBtn">儲存支出</button>
+        <div class="row-btns save-row"><button class="ghost" id="aaBtn" type="button" title="與朋友分帳，只記錄你的份額">AA 分帳</button><button class="primary" id="saveBtn">儲存支出</button></div>
       </div>
       <h2>本月最近紀錄</h2>
       <div class="card list" id="recentList"><p class="muted small">載入中…</p></div>
@@ -486,6 +489,12 @@ a{color:inherit}
         </div>
         <p class="hint small" style="margin-top:8px">左欄填 emoji；↑↓ 調整次序。改名不會更改過往紀錄；每類最多 24 個。儲存後所有裝置同步。</p>
       </div>
+      <h2>分帳常用參加者</h2>
+      <div class="card">
+        <input class="text-in" id="spPeopleIn" type="text" placeholder="以逗號分隔，例如 Pang, Kobe" autocomplete="off">
+        <button class="primary" id="spPeopleSave" type="button" style="margin-top:10px">儲存</button>
+        <p class="hint small" style="margin-top:8px">新增分帳時按此次序顯示為快選（其後附上你常用的其他名字）。</p>
+      </div>
       <h2>每月預算</h2>
       <div class="card">
         <div class="bud-grid" id="budBox"></div>
@@ -564,6 +573,7 @@ a{color:inherit}
     <p class="hint small" id="reHkd"></p>
     <div class="row-btns" style="margin-top:12px">
       <button class="ghost danger" id="reDel" type="button">刪除</button>
+      <button class="ghost" id="reAA" type="button">轉為分帳</button>
       <button class="primary" id="reSave" type="button">儲存變更</button>
     </div>
   </div>
@@ -750,7 +760,7 @@ async function loadFixed(){
 const getQ = () => JSON.parse(localStorage.getItem('expenseQueue') || '[]');
 const setQ = q => { localStorage.setItem('expenseQueue', JSON.stringify(q)); updateSync(); };
 let flushing = false, inFlight = null, syncErr = '';
-const API_VERSION = 8; // 與 Code.gs 的 API_VERSION 對應
+const API_VERSION = 9; // 與 Code.gs 的 API_VERSION 對應
 // 同步健康狀態（只存本機）：okAt 最後成功同步時間；err／errAt 最近一次錯誤
 function noteHealth(ok, err){
   const h = lsGet('syncHealth', {});
@@ -937,6 +947,7 @@ function renderTabs(){
   const m = Number(S.date.slice(5,7));
   $('#fixedHint').textContent = S.cycle === 'Y' ? `年繳：由明年起每年 ${m} 月 1 號自動入帳；加價或取消可到 Expense 頁修改。`
     : '固定項目由下個月 1 號起自動入帳；加價或取消可到 Expense 頁修改。';
+  $('#aaBtn').hidden = S.section === '固定';
   $('#cur').disabled = S.section === '固定'; $('#curWrap').classList.toggle('locked', S.section === '固定');
   renderRemarkChips();
   renderTripRow();
@@ -1165,6 +1176,7 @@ async function renderExpense(){
     let html = `<div class="card${Object.keys(bud).some(k => k !== 'total') ? ' has-bud' : ''}"><div class="muted small">本月合計 ${money(total)}（${rows.length} 筆）</div>
       <div class="split2"><div><div class="muted small">可控消費</div><div class="t2">${money(round2(varTotal))}</div></div>
         <div><div class="muted small">固定支出</div><div class="t2 dim">${money(round2(fixTotal))}</div></div></div>
+      ${(o => o.due || o.owe ? `<button type="button" class="aa-line" data-goto="splits"><span>🧾 AA 待收 <b>${money(o.due)}</b>${o.n ? `（${o.n} 筆）` : ''}${o.owe ? `，待付 ${money(o.owe)}` : ''}</span><span class="muted">不計入支出 ›</span></button>` : '')(spOutstanding())}
       ${bud.var ? budLine(varTotal, bud.var, '可控預算') : ''}${bud.total ? budLine(total, bud.total, '總預算') : ''}
       ${S.expYm === todayStr().slice(0,7) ? projHtml(varRows, varTotal, fixTotal, bud.total, bud.var) : ''}
       ${bySec.map(([s,v]) => { const b = bud[s], st = budStat(v, b);
@@ -1206,6 +1218,7 @@ $('#expBody').addEventListener('toggle', e => {
   if (e.target.id === 'fxFold') lsSet('fxFold', e.target.open ? '1' : '0');
   if (e.target.dataset?.wk) S.wkOpen[e.target.dataset.wk] = e.target.open;
 }, true);
+$('#expBody').addEventListener('click', e => { if (e.target.closest('[data-goto="splits"]')) return go('splits'); });
 $('#expBody').addEventListener('click', e => {
   const ed = e.target.closest('[data-edit]'), fx = e.target.closest('[data-fx]'), et = e.target.closest('[data-etab]');
   if (et){ S.expTab = et.dataset.etab; lsSet('expTab', S.expTab); return renderExpense(); }
@@ -1302,6 +1315,7 @@ function openRec(id){
   $('#reRate').value = r.currency && r.currency !== 'HKD' ? fmtRate(r.fxRate) : '';
   $('#reRemark').value = r.remark || '';
   $('#reTrip').innerHTML = tripOpts(r.trip || ''); $('#reTrip').disabled = fixed;
+  $('#reAA').hidden = fixed;
   reUpd(); $('#recOverlay').classList.add('show');
 }
 const closeRec = () => $('#recOverlay').classList.remove('show');
@@ -1537,7 +1551,7 @@ async function renderInbox(){
       <label class="field">備註<input class="text-in" data-f="remark" type="text" value="${esc(sg.remark || '')}" placeholder="例如店名" autocomplete="off"></label>
       ${sg.generic ? '' : `<label class="field">以後「${esc(r.merchant)}」<select class="text-in" data-f="remember">
         <option value="auto"${sg.rule ? '' : ' selected'}>自動入帳為此類別</option><option value="ask"${sg.rule ? ' selected' : ''}>每次詢問（預填此類別）</option><option value="">不記住</option></select></label>`}
-      <div class="row-btns"><button class="ghost" type="button" data-act="skip">略過</button><button class="primary" type="button" data-act="ok">確認入帳</button></div>
+      <div class="row-btns"><button class="ghost" type="button" data-act="skip">略過</button><button class="ghost" type="button" data-act="split">AA 分帳</button><button class="primary" type="button" data-act="ok">確認入帳</button></div>
       <details><summary>短訊原文</summary><p class="ib-raw">${esc(r.raw)}</p></details>
     </div>`;
   }).join('') : '<div class="card"><p class="muted">沒有待確認的消費通知。</p></div>';
@@ -1551,6 +1565,11 @@ $('#ibBody').addEventListener('click', async e => {
   const b = e.target.closest('[data-act]'); if (!b) return;
   const card = b.closest('[data-ib]'), id = card.dataset.ib, r = S.inbox.find(x => x.id === id);
   const f = k => card.querySelector(`[data-f="${k}"]`)?.value ?? '';
+  if (b.dataset.act === 'split'){ // 轉為分帳：只記錄我的份額，通知於儲存後標記為已處理
+    const item = f('item') === MEAL ? mealOfTs(r.ts) : f('item');
+    return spFrom({ date:r.date, currency:r.currency, fxRate:r.currency !== 'HKD' && r.origAmount ? r.amount / r.origAmount : 1, amt:r.currency !== 'HKD' ? r.origAmount : r.amount,
+      desc:f('remark').trim(), name:f('remark').trim() || r.merchant, sec:f('section'), item, src:{ inbox:r.id, what:`「${r.merchant}」通知` } });
+  }
   b.disabled = true;
   try {
     if (b.dataset.act === 'ok'){
@@ -1637,6 +1656,7 @@ async function renderTrips(){
         ${t.start ? `<button class="ghost" type="button" data-tedit="${esc(t.name)}">修改</button>` : ''}</div>
       <div class="total">${money(round2(t.total || 0))}</div>
       <div class="sub muted small">${t.count || 0} 筆${days && t.total ? `，每日平均 ${money(round2(t.total / days))}` : ''}${fx ? `，外幣 ${fx}` : ''}</div>
+      ${spTripInfo(t.name)}
       ${items.slice(0,6).map(([k,v]) => `<div class="bar-row"><span>${esc(k)}</span><span class="bar"><i style="width:${v/mx*100}%;background:${secColor('旅遊')}"></i></span><span class="num">${money(round2(v))}</span></div>`).join('')}
     </div>`;
   }).join('') : '<div class="card"><p class="muted">未有旅程。在上方輸入名稱及日期即可新增。</p></div>';
@@ -1662,6 +1682,10 @@ $('#tfSave').addEventListener('click', async () => {
    「我」的份額寫入 Records（SplitID 欄）；待收／待付不計入支出。
    儲存先寫入本機（splitsCfg＋splitsPending），背景同步至 Sheet，失敗會於 30 秒／回到前台時重試。 */
 const ME = '我', SPLIT_REMIND_DAYS = 3;
+const SPLIT_PEOPLE_DEF = ['Pang', 'Kobe', 'Ming', '01', 'Roy', 'RG', 'Wade']; // 未在設定頁修改時的常用參加者（Settings 鍵 split.people）
+const spPeopleList = () => { const v = S.settings['split.people']; return v == null ? SPLIT_PEOPLE_DEF : String(v).split(/[,，、]/).map(x => x.trim()).filter(x => x && x !== '-'); };
+const mealOfTs = iso => { const h = new Date(iso).getHours(), m = h >= 5 && h < 11 ? '早餐' : h >= 11 && h < 16 ? '午餐' : h >= 17 && h < 23 ? '晚餐' : '零食';
+  return (SECTIONS['日常'] || []).some(x => x[0] === m) ? m : spDefItem('日常'); };
 S.splits = lsGet('splitsCfg', []); S.spEdit = null; S.spLoaded = false;
 const spPend = () => lsGet('splitsPending', {});
 const spUnit = c => { try { return 10 ** new Intl.NumberFormat('en', {style:'currency', currency:c}).resolvedOptions().maximumFractionDigits; } catch(e){ return 100; } };
@@ -1714,7 +1738,7 @@ function spRecords(sp, c){
   return sp.data.expenses.map((e,i) => {
     const r = c.per[i], mine = r.err ? 0 : r.share[ME]; if (!(mine > 0)) return null;
     const orig = mine / c.unit;
-    return { id:`${sp.id}_${e.id}`, date:sp.date, section:e.sec, item:e.item, amount:round2(orig * rate), remark:`AA：${sp.name}${e.desc ? '·' + e.desc : ''}`,
+    return { id:`${sp.id}_${e.id}`, date:sp.date, section:e.sec, item:e.item, amount:round2(orig * rate), remark:`AA：${sp.name}${e.desc && e.desc !== sp.name ? "·" + e.desc : ""}`,
       currency:sp.currency, fxRate:rate, origAmount:orig, trip:e.sec === '旅遊' ? sp.trip : '' };
   }).filter(Boolean);
 }
@@ -1740,7 +1764,7 @@ async function flushSplits(){
       n++;
     }
   } finally { spFlushing = false; }
-  if (n){ resetCache(); dropSummary(); if (S.page === 'splits'){ if (!S.spEdit) renderSplits(); } else if (['input','expense','analysis'].includes(S.page)) refresh(); }
+  if (n){ resetCache(); dropSummary(); loadInbox(true); if (S.page === 'splits'){ if (!S.spEdit) renderSplits(); } else if (['input','expense','analysis'].includes(S.page)) refresh(); }
 }
 setInterval(flushSplits, 30000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) flushSplits(); });
@@ -1813,13 +1837,37 @@ function spExpHtml(sp, e, i){
   </div>`;
 }
 function spSuggest(P){
-  const m = lsGet('splitPeople', {});
-  return Object.keys(m).filter(n => !P.includes(n)).sort((a,b) => m[b] - m[a]).slice(0, 8);
+  const m = lsGet('splitPeople', {}), base = spPeopleList();
+  const extra = Object.keys(m).filter(n => !base.includes(n)).sort((a,b) => m[b] - m[a]);
+  return [...base, ...extra].filter(n => n !== ME && !P.includes(n)).slice(0, 14);
+}
+// 以現有資料開新分帳（新增支出頁、待確認通知、現有紀錄）；src 記錄來源，儲存時取代原本的全額紀錄／標記通知
+function spFrom(o){
+  const sp = spNew(), cur = CUR[o.currency] ? o.currency : 'HKD';
+  Object.assign(sp, { date:o.date || todayStr(), currency:cur, fxRate:cur === 'HKD' ? 1 : (o.fxRate > 0 ? Number(fmtRate(o.fxRate)) : reRateDefault(cur)), trip:o.trip || '', name:o.name || '' });
+  const sec = SP_SECS.includes(o.sec) ? o.sec : sp.trip ? '旅遊' : '日常', e = sp.data.expenses[0];
+  Object.assign(e, { desc:o.desc || '', amt:o.amt > 0 ? withCommas(round2(o.amt)) : '', sec, item:o.item && o.item !== MEAL && (SECTIONS[sec] || []).some(x => x[0] === o.item) ? o.item : spDefItem(sec) });
+  if (o.src) sp.data.src = o.src;
+  S.spEdit = sp; go('splits'); scrollTo({ top:0 });
+}
+function spOutstanding(){
+  let due = 0, owe = 0, n = 0;
+  S.splits.forEach(sp => { spNorm(sp); const c = spCalc(sp), r = sp.currency === 'HKD' ? 1 : sp.fxRate;
+    c.tx.filter(t => !t.done).forEach(t => { if (t.to === ME){ due += t.amt / c.unit * r; n++; } if (t.from === ME) owe += t.amt / c.unit * r; }); });
+  return { due:round2(due), owe:round2(owe), n };
+}
+function spTripInfo(name){
+  const list = S.splits.filter(sp => sp.trip === name); if (!list.length) return '';
+  let mine = 0, due = 0;
+  list.forEach(sp => { spNorm(sp); const c = spCalc(sp), r = sp.currency === 'HKD' ? 1 : sp.fxRate;
+    mine += (c.owe[ME] || 0) / c.unit * r; c.tx.filter(t => !t.done && t.to === ME).forEach(t => due += t.amt / c.unit * r); });
+  return `<div class="sub muted small">🧾 ${list.length} 個分帳：我的份額 ${money(round2(mine))} 已計入上方合計${due ? `；代墊待收 ${money(round2(due))}（不計入）` : ''}</div>`;
 }
 function spRenderEd(){
   const sp = S.spEdit, P = sp.data.people, foreign = sp.currency !== 'HKD', sugg = spSuggest(P), exists = S.splits.some(x => x.id === sp.id);
   $('#spBody').innerHTML = `<div class="card">
       <strong>${exists ? '修改分帳' : '新增分帳'}</strong>
+      ${sp.data.src && !exists ? `<p class="hint small sp-src">${sp.data.src.rec ? `由${esc(sp.data.src.what || '現有紀錄')}轉為分帳：儲存後，原本的全額紀錄會由你的份額取代。` : sp.data.src.inbox ? `由${esc(sp.data.src.what || '待確認通知')}轉為分帳：儲存後只記錄你的份額，通知標記為已處理。` : `來自新增支出頁：儲存後只記錄你的份額，表格會清空。`}</p>` : ''}
       <div class="re-grid" style="margin-top:10px">
         <label class="field" style="grid-column:1/-1">活動名稱<input class="text-in" data-sp="name" value="${esc(sp.name)}" maxlength="30" placeholder="例如 週五打邊爐（可留空）" autocomplete="off"></label>
         <label class="field">日期<input class="text-in" type="date" data-sp="date" value="${sp.date}"></label>
@@ -1868,6 +1916,19 @@ function spText(sp, c){
     ...sp.data.expenses.map((e,i) => `· ${e.desc || (sp.data.expenses.length > 1 ? `支出 ${i + 1}` : '支出')} ${M(c.per[i].T)}（${e.payer}付${e.mode === 'w' ? '，按份數' : e.mode === 'x' ? '，按指定金額' : P.some(p => e.inc[p] === false) ? `，${P.filter(p => e.inc[p] !== false).join('、')}分` : ''}）`),
     '—', ...(c.tx.length ? c.tx.map(t => `${t.from} → ${t.to} ${M(t.amt)}${t.done ? ' ✓' : ''}`) : ['不需要轉帳'])].join('\n');
 }
+// 即時反映來源：移除被取代的紀錄（未同步的直接從佇列移除）、移除已處理的通知、清空新增支出表格
+function spApplySrc(sp){
+  const src = sp.data.src; if (!src) return;
+  if (src.rec){
+    setQ(getQ().filter(x => x.id !== src.rec));
+    Object.keys(S.cache).forEach(ym => { const a = S.cache[ym]; if (a.some(x => x.id === src.rec)) S.cache[ym] = a.filter(x => x.id !== src.rec); });
+  }
+  if (src.inbox && S.inbox){
+    S.inbox = S.inbox.filter(x => x.id !== src.inbox); const n = S.inbox.length;
+    $('#ibBadge').hidden = !n; $('#ibBadge').textContent = n; $('#ibBanner').hidden = !n; $('#ibBannerText').textContent = `${n} 筆消費通知待確認`;
+  }
+  if (src.form){ $('#amount').value = ''; $('#remark').value = ''; S.item = null; renderTabs(); updHkd(); }
+}
 async function copyText(text){
   try { if (navigator.clipboard && window.isSecureContext){ await navigator.clipboard.writeText(text); return true; } } catch(e){}
   const ta = Object.assign(document.createElement('textarea'), { value:text, readOnly:true }); ta.style.cssText = 'position:fixed;top:-9999px';
@@ -1890,7 +1951,8 @@ async function spSave(copy){
   const first = sp.status === 'open' && copy;
   if (first){ sp.status = 'settled'; sp.settledAt = new Date().toISOString(); }
   const m = lsGet('splitPeople', {}); sp.data.people.forEach(p => { if (p !== ME) m[p] = (m[p] || 0) + 1; }); lsSet('splitPeople', m);
-  spStore(sp, c);
+  const isNew = !S.splits.some(x => x.id === sp.id);
+  spStore(sp, c); if (isNew) spApplySrc(sp);
   S.spEdit = null; renderSplits(); scrollTo({ top:0, behavior:'smooth' });
   if (!copy) return toast('已儲存分帳');
   const ok = await copyText(spText(sp, c));
@@ -1969,6 +2031,16 @@ spBody.addEventListener('click', e => {
   }
 });
 
+$('#aaBtn').addEventListener('click', () => {
+  const cur = S.cur, rate = cur === 'HKD' ? 1 : parseFloat($('#fxRate').value), rm = cleanRemark();
+  spFrom({ date:S.date, currency:cur, fxRate:rate, amt:num($('#amount').value), desc:rm, name:rm, sec:S.section, item:S.item, trip:S.section === '旅遊' ? S.trip : '', src:{ form:true } });
+});
+$('#reAA').addEventListener('click', () => {
+  const r = S.reEdit; if (!r) return; closeRec();
+  spFrom({ date:r.date, currency:r.currency || 'HKD', fxRate:r.fxRate, amt:r.currency && r.currency !== 'HKD' ? r.origAmount : r.amount, desc:r.remark, name:r.remark || r.item,
+    sec:r.section, item:r.item, trip:r.trip, src:{ rec:r.id, what:`「${r.item} ${showAmt(r)}」` } });
+});
+
 /* ---------- 主畫面捷徑（manifest shortcuts）：?s=類別&i=項目 或 ?p=頁面 ---------- */
 function applyLaunchParams(){
   const q = new URLSearchParams(location.search); if (!q.toString()) return false;
@@ -2026,6 +2098,7 @@ function renderSettings(){
     ? `已連結。<a href="${esc(cfg.sheetUrl)}" target="_blank" rel="noopener">開啟 Google Sheet</a>${n ? `，${n} 筆支出待同步` : ''}`
     : '尚未連結。';
   itLoad(IT.sec); renderBudget(); renderPerf();
+  $('#spPeopleIn').value = spPeopleList().join(', ');
   renderHealth();
 }
 /* ---------- 快選項目編輯 ---------- */
@@ -2093,6 +2166,13 @@ $('#budSave').addEventListener('click', async () => {
     Object.entries(st).forEach(([k,v]) => { if (v === '') delete S.settings[k]; else S.settings[k] = v; });
     lsSet('settingsCfg', S.settings); toast('已儲存每月預算');
   } catch(e){ toast(errMsg(e)); }
+  btn.disabled = false;
+});
+$('#spPeopleSave').addEventListener('click', async () => {
+  const list = $('#spPeopleIn').value.split(/[,，、]/).map(x => x.trim().slice(0, 12)).filter(x => x && x !== ME);
+  const v = [...new Set(list)].join(', ') || '-', btn = $('#spPeopleSave'); btn.disabled = true;
+  try { await post({action:'saveSettings', settings:{'split.people':v}}); S.settings['split.people'] = v; lsSet('settingsCfg', S.settings); toast('已儲存常用參加者'); renderSettings(); }
+  catch(e){ toast(errMsg(e)); }
   btn.disabled = false;
 });
 function syncSettings(){
@@ -2166,7 +2246,7 @@ if (!cfg.url) go('settings'); else {
   flushQ(); flushSplits(); syncItems(); syncSettings(); loadInbox(true); syncTrips();
   // 閒置時預載上兩個月（分析頁預設及環比用），同時累積常用備註
   // 預先載入：分析頁（上月及前月）、支出概覽的固定項目、趨勢數據；大多由本機快取即時取得，背景再更新
-  setTimeout(() => { const m = todayStr().slice(0,7); [1,2].forEach(k => loadMonth(shiftYm(m,-k)).catch(() => {})); loadFixed().catch(() => {}); loadSummary().catch(() => {}); }, 1500);
+  setTimeout(() => { const m = todayStr().slice(0,7); [1,2].forEach(k => loadMonth(shiftYm(m,-k)).catch(() => {})); loadFixed().catch(() => {}); loadSummary().catch(() => {}); syncSplits(); }, 1500);
 }
 </script>
 </body>
