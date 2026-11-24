@@ -311,6 +311,7 @@ select.text-in{appearance:auto;padding:10px 12px}
 a{color:inherit}
 @media (prefers-reduced-motion: reduce){ *{transition:none!important;scroll-behavior:auto!important} }
 /* 分帳 */
+.sp-btns .sp-copy{flex:0 0 auto;display:grid;place-items:center;padding:0 14px}
 .save-row .ghost{flex:0 0 auto}
 .aa-line{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;margin:10px 0 2px;padding:9px 12px;border:0;border-radius:12px;background:var(--surface-2);color:var(--ink);font-size:13px;text-align:left}
 .sp-src{margin:8px 0 0;padding:8px 10px;border-radius:10px;background:var(--warn-bg);color:var(--warn-ink)}
@@ -1802,7 +1803,7 @@ const spNorm = sp => { sp.data = sp.data || {}; sp.data.people = sp.data.people 
   (sp.data.expenses = sp.data.expenses || []).forEach(e => { e.inc = e.inc || {}; e.w = e.w || {}; e.x = e.x || {}; }); return sp; };
 function spOpen(id){ const sp = S.splits.find(x => x.id === id); if (!sp) return false; S.spEdit = spNorm(spClone(sp)); return true; }
 
-const SP_ST = { open:'未結算', settled:'待清數', done:'已清數' };
+const SP_ST = { open:'未確認', settled:'待清數', done:'已清數' };
 function spTxHtml(t, M, sid){
   const lbl = t.to === ME ? '已收' : t.from === ME ? '已付' : '已清';
   return `<div class="sp-tx${t.done ? ' done' : ''}"><span class="who">${esc(t.from)} → ${esc(t.to)}</span><span class="amt">${M(t.amt)}</span>
@@ -1907,9 +1908,11 @@ function spRenderEd(){
     ${sp.data.expenses.map((e,i) => spExpHtml(sp, e, i)).join('')}
     <button class="ghost sp-more" type="button" id="spAddE">＋ 新增一筆支出（多人各付不同項目）</button>
     <div class="card" id="spRes" style="margin-top:12px"></div>
-    <div class="row-btns" style="margin-top:12px"><button class="ghost" type="button" id="spCancel">取消</button><button class="ghost" type="button" id="spSave">儲存</button>
-      <button class="primary" type="button" id="spSettle">${sp.status === 'open' ? '結算並複製文字' : '儲存並複製文字'}</button></div>
-    ${sp.status === 'open' ? `<p class="hint small" style="margin:8px 4px">「結算」後開始追收：${SPLIT_REMIND_DAYS} 日後仍有轉帳未清，會經 Signal 提醒你一次。</p>` : sp.settledAt ? `<p class="hint small" style="margin:8px 4px">已於 ${relTime(sp.settledAt)}結算。</p>` : ''}
+    <div class="row-btns sp-btns" style="margin-top:12px"><button class="ghost" type="button" id="spCancel">取消</button>
+      <button class="${sp.status === 'open' ? 'ghost' : 'primary'}" type="button" id="spSave">儲存</button>
+      ${sp.status === 'open' ? '<button class="primary" type="button" id="spSettle">確認</button>' : ''}
+      <button class="ghost sp-copy" type="button" id="spCopy" aria-label="複製文字" title="複製文字（可貼到 WhatsApp）"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z"/></svg></button></div>
+    ${sp.status === 'open' ? `<p class="hint small" style="margin:8px 4px">「確認」後開始追收：${SPLIT_REMIND_DAYS} 日後仍有涉及你的轉帳未清，會經 Signal 提醒你一次。右邊圖示可複製文字貼到 WhatsApp。</p>` : sp.settledAt ? `<p class="hint small" style="margin:8px 4px">已於 ${relTime(sp.settledAt)}確認。</p>` : ''}
     ${exists ? '<button class="ghost sp-del" type="button" id="spDel">刪除此分帳（連同記帳紀錄）</button>' : ''}`;
   $('#spBody [data-sp="currency"]').value = sp.currency;
   spRenderRes();
@@ -1924,7 +1927,7 @@ function spRenderRes(){
     h.className = 'hint small';
     h.textContent = `${k} 人分攤` + (!sp.data.people.includes(ME) ? '' : mine > 0 ? `，我的份額 ${M(mine)}${hk(mine)}，記入 ${e.sec}·${e.item}` : '，我不用分攤（不會入帳）');
   });
-  $('#spRes').innerHTML = `<strong>結算</strong>
+  $('#spRes').innerHTML = `<strong>計算結果</strong>
     <div class="muted small" style="margin:4px 0 8px">合計 ${M(c.total)}${hk(c.total)}${c.errs.length ? `，${c.errs.length} 筆支出未完成` : ''}</div>
     <table class="sp-tbl"><thead><tr><th>參加者</th><th>已付</th><th>應付</th><th>差額</th></tr></thead><tbody>
     ${P.map(p => `<tr><td>${esc(p)}</td><td>${M(c.paid[p])}</td><td>${M(c.owe[p])}</td><td class="${c.net[p] > 0 ? 'st-ok-t' : c.net[p] < 0 ? 'st-warn-t' : ''}">${c.net[p] > 0 ? '收 ' : c.net[p] < 0 ? '付 ' : ''}${M(Math.abs(c.net[p]))}</td></tr>`).join('')}
@@ -1934,7 +1937,8 @@ function spRenderRes(){
 }
 function spText(sp, c){
   const M = v => spMoney(v, c.unit, sp.currency), P = sp.data.people;
-  return [`🧾 ${sp.name}（${sp.date.slice(5).replace('-','/')}）`, `合計 ${M(c.total)}，${P.length} 人`,
+  const d = sp.date.slice(5).replace('-','/');
+  return [`🧾 ${sp.name.includes(d) ? sp.name : `${sp.name}（${d}）`}`, `合計 ${M(c.total)}，${P.length} 人`,
     ...sp.data.expenses.map((e,i) => `· ${e.desc || (sp.data.expenses.length > 1 ? `支出 ${i + 1}` : '支出')} ${M(c.per[i].T)}（${e.payer}付${e.mode === 'w' ? '，按份數' : e.mode === 'x' ? '，按指定金額' : P.some(p => e.inc[p] === false) ? `，${P.filter(p => e.inc[p] !== false).join('、')}分` : ''}）`),
     '—', ...(c.tx.length ? c.tx.map(t => `${t.from} → ${t.to} ${M(t.amt)}${t.done ? ' ✓' : ''}`) : ['不需要轉帳'])].join('\n');
 }
@@ -1963,23 +1967,34 @@ function spAddPerson(name, focus){
   if (name === ME) P.unshift(ME); else P.push(name);
   spRenderEd(); if (focus) $('#spNewP').focus();
 }
-async function spSave(copy){
-  const sp = S.spEdit;
+// 驗證並整理（剔除空白支出、預設名稱）；回傳 {c} 或 {err}
+function spCheck(sp){
   sp.name = sp.name.trim() || `分帳 ${sp.date.slice(5).replace('-','/')}`;
   if (sp.data.expenses.length > 1) sp.data.expenses = sp.data.expenses.filter(e => String(e.amt).trim() || e.desc.trim()); // 剔除空白支出
   const c = spCalc(sp);
   const err = sp.data.people.length < 2 ? '最少需要 2 位參加者' : !sp.data.expenses.length ? '請輸入支出' : c.errs.length ? `支出未完成：${c.errs[0].err}`
     : sp.currency !== 'HKD' && !(sp.fxRate > 0) ? '請輸入有效匯率' : '';
+  return { c, err };
+}
+// 複製文字：不儲存，以編輯中的內容產生
+async function spCopy(){
+  const sp = S.spEdit, n = sp.data.expenses.length, { c, err } = spCheck(sp);
+  if (sp.data.expenses.length !== n) spRenderEd();
+  if (err) return toast(err);
+  toast(await copyText(spText(sp, c)) ? '已複製文字，可貼到 WhatsApp' : '未能複製，請再試');
+}
+async function spSave(confirmIt){
+  const sp = S.spEdit, { c, err } = spCheck(sp);
   if (err){ spRenderEd(); return toast(err); }
-  const first = sp.status === 'open' && copy;
+  const first = sp.status === 'open' && confirmIt;
   if (first){ sp.status = 'settled'; sp.settledAt = new Date().toISOString(); }
   const m = lsGet('splitPeople', {}); sp.data.people.forEach(p => { if (p !== ME) m[p] = (m[p] || 0) + 1; }); lsSet('splitPeople', m);
   const isNew = !S.splits.some(x => x.id === sp.id);
   spStore(sp, c); if (isNew) spApplySrc(sp);
   S.spEdit = null; renderSplits(); scrollTo({ top:0, behavior:'smooth' });
-  if (!copy) return toast('已儲存分帳');
-  const ok = await copyText(spText(sp, c));
-  toast(`${first ? '已結算' : '已儲存'}${ok ? '並複製結算文字，可貼到 WhatsApp' : '（未能複製，請再試）'}${first && c.tx.length ? `；${SPLIT_REMIND_DAYS} 日後仍未清數會經 Signal 提醒` : ''}`, 4200);
+  if (!first) return toast('已儲存分帳');
+  const mine = c.tx.some(t => t.from === ME || t.to === ME);
+  toast(`已確認${mine ? `，${SPLIT_REMIND_DAYS} 日後仍未清數會經 Signal 提醒` : c.tx.length ? '（不涉及你，不會提醒）' : ''}`, 3600);
 }
 const spBody = $('#spBody');
 spBody.addEventListener('input', e => {
@@ -2047,6 +2062,7 @@ spBody.addEventListener('click', e => {
   if (b.id === 'spCancel'){ S.spEdit = null; renderSplits(); return; }
   if (b.id === 'spSave') return spSave(false);
   if (b.id === 'spSettle') return spSave(true);
+  if (b.id === 'spCopy') return spCopy();
   if (b.id === 'spDel'){
     if (!confirm(`刪除「${sp.name || '此分帳'}」及其記帳紀錄？`)) return;
     const pend = spPend(); pend[sp.id] = { del:true }; lsSet('splitsPending', pend);

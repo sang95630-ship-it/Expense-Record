@@ -21,7 +21,7 @@ const INBOX_HEAD = ['ID', 'ReceivedAt', 'Source', 'Raw', 'Merchant', 'Currency',
 const MERCH_HEAD = ['Merchant', 'Section', 'Item', 'Remark', 'Mode', 'Count', 'UpdatedAt'];
 const TRIPS = 'Trips', TRIPS_HEAD = ['Name', 'Start', 'End', 'Currency', 'Note']; // Start／End 為純文字 yyyy-MM-dd
 const SPLITS = 'Splits', SPLITS_HEAD = ['ID', 'Name', 'Date', 'Currency', 'FxRate', 'Trip', 'Status', 'Data', 'UpdatedAt', 'SettledAt']; // 分帳（第 6 期）
-const SPLIT_REMIND_DAYS = 3;       // 分帳結算後 N 日仍有轉帳未清 → Signal 提醒一次
+const SPLIT_REMIND_DAYS = 3;       // 分帳確認後 N 日仍有轉帳未清 → Signal 提醒一次
 const MEAL = '@meal'; // 項目「按時間」：早／午／晚餐由交易時間決定
 
 function tz_() { return SpreadsheetApp.getActive().getSpreadsheetTimeZone(); }
@@ -192,7 +192,7 @@ function watchdog() {
   if (inbox && now - new Date(inbox) > WD_INBOX_DAYS * 864e5) alert('inbox', `手機通知轉發器已 ${WD_INBOX_DAYS} 日沒有回報，請檢查 Tasker 是否被系統關閉`);
   // 5. 預算：09:00–22:00 檢查，本月用量達 80%／100% 各提醒一次
   if (hour >= 9 && hour <= 22) budgetCheck_(ym);
-  // 6. 分帳催收（第 6 期）：結算後 N 日仍有轉帳未清，每個活動提醒一次
+  // 6. 分帳催收（第 6 期）：確認後 N 日仍有轉帳未清，每個活動提醒一次
   if (hour >= 9 && hour <= 22) splitCheck_(now);
   flushNotify_();
   p.setProperty('WD_SENT', JSON.stringify(sent));
@@ -641,7 +641,7 @@ function splitCheck_(now) {
     const open = (d.transfers || []).filter(t => !t.done && (t.from === '我' || t.to === '我')); if (!open.length) return; // 只提醒涉及「我」的轉帳
     const cur = String(r[3] || 'HKD'), unit = Number(d.unit) || 100;
     sent[r[0]] = fmt_(now, 'yyyy-MM-dd'); changed = true;
-    notify_(`💸 分帳「${r[1]}」已結算 ${Math.floor((now - at) / 864e5)} 日，仍有 ${open.length} 筆涉及你的轉帳未清：`
+    notify_(`💸 分帳「${r[1]}」已確認 ${Math.floor((now - at) / 864e5)} 日，仍有 ${open.length} 筆涉及你的轉帳未清：`
       + open.slice(0, 6).map(t => `${t.from}→${t.to} ${money_(cur, t.amt / unit)}`).join('；'));
   });
   if (changed) p.setProperty('SPLIT_SENT', JSON.stringify(sent));
