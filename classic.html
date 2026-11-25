@@ -672,13 +672,18 @@ a{color:inherit}
 <script>
 const DEFAULT_SECTIONS = {
   '旅遊': [['機票','✈️'],['酒店','🏨'],['門票','🎟️'],['交通','🚄'],['餐飲','🍣'],['購物','🛍️'],['保險','🛡️'],['其他','🧳']],
-  '日常': [['早餐','🍳'],['午餐','🍱'],['晚餐','🍜'],['飲品','🧋'],['交通','🚇'],['零食','🍪'],['日用品','🧴'],['雜項','📦']],
+  '日常': [['餐飲','🍽️'],['飲品','🧋'],['交通','🚇'],['零食','🍪'],['日用品','🧴'],['雜項','📦']],
   '固定': [['月供','🏠'],['保險','🛡️'],['訂閱','📺'],['月票','🎫'],['電話費','📱'],['上網','🌐'],['水電煤','💡'],['管理費','🏢']],
   '其他': [['衣服','👕'],['電器','🔌'],['娛樂','🎮'],['醫療','💊'],['禮物','🎁'],['運動','🏋️'],['教育','📚'],['補充品','🌿'],['其他','✨']]
 };
 const ORDER = ['旅遊','日常','固定','其他'];
 // 自訂快選項目（Sheet「Items」，本機快取 itemsCfg）；某類別未自訂時使用預設
-const buildSections = custom => Object.fromEntries(ORDER.map(s => [s, custom?.[s]?.length ? custom[s] : DEFAULT_SECTIONS[s]]));
+// 早餐／午餐／晚餐已合併為「餐飲」：舊紀錄及舊自訂項目一律視作餐飲（Sheet 原有資料不改動）
+const LEGACY_MEAL = ['早餐','午餐','晚餐'];
+const normItem = (sec, item) => sec === '日常' && LEGACY_MEAL.includes(item) ? '餐飲' : item;
+const normRows = rows => (rows || []).map(r => r && r.section === '日常' && LEGACY_MEAL.includes(r.item) ? { ...r, item:'餐飲' } : r);
+const collapseMeals = list => { const out = []; list.forEach(x => { if (LEGACY_MEAL.includes(x[0]) || x[0] === '餐飲'){ if (!out.some(y => y[0] === '餐飲')) out.push(['餐飲','🍽️']); } else out.push(x); }); return out; };
+const buildSections = custom => Object.fromEntries(ORDER.map(s => [s, custom?.[s]?.length ? (s === '日常' ? collapseMeals(custom[s]) : custom[s]) : DEFAULT_SECTIONS[s]]));
 let SECTIONS = buildSections((() => { try { return JSON.parse(localStorage.getItem('itemsCfg')) || {}; } catch(e){ return {}; } })());
 const UNDO_MS = 3200; // 「復原」按鈕顯示時間
 // [代碼, 符號, 名稱, 後備匯率(1 外幣 = ? HKD，連線失敗時使用)]
@@ -727,7 +732,7 @@ function fmtAmountInput(el){
   try { el.setSelectionRange(k, k); } catch(e){}
 }
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const iconOf = (s,i) => [...(SECTIONS[s]||[]), ...(DEFAULT_SECTIONS[s]||[]), ...Object.values(SECTIONS).flat()].find(x=>x[0]===i)?.[1] || '•';
+const iconOf = (s,i) => [...(SECTIONS[s]||[]), ...(LEGACY_MEAL.includes(i) ? [[i,'🍽️']] : []), ...(DEFAULT_SECTIONS[s]||[]), ...Object.values(SECTIONS).flat()].find(x=>x[0]===i)?.[1] || '•';
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)+Math.random().toString(36).slice(2));
 const dateLabel = s => { const [y,m,d] = s.split('-').map(Number); const w = '日一二三四五六'[new Date(y,m-1,d).getDay()]; return `${y}年${m}月${d}日（週${w}）`; };
 
@@ -827,12 +832,12 @@ async function loadMonth(ym){
   const hit = DC.m[ym];
   if (hit) {
     perfHit('list', 'disk');
-    const rows = hit.rows; S.cache[ym] = rows;
-    revalidate('m:' + ym, () => get({action:'list', month:ym}).then(j => (learnRemarks(j.rows), j.rows)), fresh => { S.cache[ym] = fresh; }, rows);
+    const rows = normRows(hit.rows); S.cache[ym] = rows;
+    revalidate('m:' + ym, () => get({action:'list', month:ym}).then(j => (j.rows = normRows(j.rows), learnRemarks(j.rows), j.rows)), fresh => { S.cache[ym] = fresh; }, rows);
     return rows;
   }
   revalDone.add('m:' + ym); // 剛向伺服器取得，毋須再背景更新
-  const j = await get({action:'list', month:ym}); learnRemarks(j.rows); return (S.cache[ym] = j.rows);
+  const j = await get({action:'list', month:ym}); j.rows = normRows(j.rows); learnRemarks(j.rows); return (S.cache[ym] = j.rows);
 }
 // 伺服器資料 + 本機未同步紀錄（待同步者標示 pending）
 async function monthRows(ym){ const rows = await loadMonth(ym); return [...rows, ...getQ().filter(r => r.date.slice(0,7) === ym).map(r => ({...r, pending:true}))]; }
@@ -1253,7 +1258,7 @@ function undoSave(rec){
 const COMBO_MAX = 5;
 function comboList(){
   const now = new Date(), h = now.getHours(), seen = new Set(), m = {};
-  const rows = [...Object.values(DC.m || {}).flatMap(x => x.rows || []), ...getQ()];
+  const rows = normRows([...Object.values(DC.m || {}).flatMap(x => x.rows || []), ...getQ()]);
   rows.forEach(r => {
     if (!r || seen.has(r.id) || r.section === '固定' || r.fixedId || r.splitId || !r.item) return; seen.add(r.id);
     const rm = String(r.remark || '').trim(); if (/^https?:\/\//.test(rm)) return;
@@ -1738,7 +1743,7 @@ async function loadInbox(force){
   return S.inbox;
 }
 $('#ibBanner').addEventListener('click', () => go('inbox'));
-const itemOpts = (sec, sel) => (sec === '日常' ? [[MEAL, '🍽 按時間判斷']] : [])
+const itemOpts = (sec, sel) => (sel = sel === MEAL ? '餐飲' : sel, [])
   .concat(SECTIONS[sec].map(x => [x[0], `${x[1]} ${x[0]}`]))
   .concat(sel && sel !== MEAL && !SECTIONS[sec].some(x => x[0] === sel) ? [[sel, sel]] : [])
   .map(([v,l]) => `<option value="${esc(v)}"${v === sel ? ' selected' : ''}>${esc(l)}</option>`).join('');
@@ -1755,7 +1760,7 @@ async function renderInbox(){
       ${sg.dup ? `<p class="ib-note">⚠️ ${esc(sg.dup)}</p>` : ''}
       <div class="re-grid">
         <label class="field">類別<select class="text-in" data-f="section">${ORDER.map(s => `<option${s === sec ? ' selected' : ''}>${s}</option>`).join('')}</select></label>
-        <label class="field">項目<select class="text-in" data-f="item">${itemOpts(sec, sg.item || MEAL)}</select></label>
+        <label class="field">項目<select class="text-in" data-f="item">${itemOpts(sec, sg.item || (sec === '日常' ? '餐飲' : ''))}</select></label>
       </div>
       <label class="field">備註<input class="text-in" data-f="remark" type="text" value="${esc(sg.remark || '')}" placeholder="例如店名" autocomplete="off"></label>
       ${sg.generic ? '' : `<label class="field">以後「${esc(r.merchant)}」<select class="text-in" data-f="remember">
@@ -1768,7 +1773,7 @@ async function renderInbox(){
 }
 $('#ibBody').addEventListener('change', e => {
   if (e.target.dataset.f !== 'section') return;
-  const card = e.target.closest('[data-ib]'); card.querySelector('[data-f="item"]').innerHTML = itemOpts(e.target.value, e.target.value === '日常' ? MEAL : '');
+  const card = e.target.closest('[data-ib]'); card.querySelector('[data-f="item"]').innerHTML = itemOpts(e.target.value, e.target.value === '日常' ? '餐飲' : '');
 });
 $('#ibBody').addEventListener('click', async e => {
   const b = e.target.closest('[data-act]'); if (!b) return;
@@ -1799,7 +1804,7 @@ async function renderRules(){
   try {
     const { rows } = await get({action:'merchants'});
     box.innerHTML = rows.length ? rows.map(r => `<div class="rule" data-m="${esc(r.merchant)}">
-      <div><div>${esc(r.merchant)}</div><div class="sub muted small">${r.mode === 'ignore' ? '不記帳' : `${esc(r.section)}／${r.item === MEAL ? '按時間' : esc(r.item)}${r.remark ? '，' + esc(r.remark) : ''}`}${r.count ? `，已自動 ${r.count} 次` : ''}</div></div>
+      <div><div>${esc(r.merchant)}</div><div class="sub muted small">${r.mode === 'ignore' ? '不記帳' : `${esc(r.section)}／${r.item === MEAL ? '餐飲' : esc(r.item)}${r.remark ? '，' + esc(r.remark) : ''}`}${r.count ? `，已自動 ${r.count} 次` : ''}</div></div>
       <select class="text-in" data-mode>${[['auto','自動'],['ask','詢問'],['ignore','略過']].map(([v,l]) => `<option value="${v}"${v === r.mode ? ' selected' : ''}>${l}</option>`).join('')}</select>
       <button type="button" data-del aria-label="刪除規則">✕</button></div>`).join('')
       : '<p class="muted small">未有規則。確認入帳時選擇「自動入帳」即會建立。</p>';
@@ -1893,13 +1898,13 @@ $('#tfSave').addEventListener('click', async () => {
 const ME = '我', SPLIT_REMIND_DAYS = 3;
 const SPLIT_PEOPLE_DEF = []; // 常用參加者存於 Settings 鍵 split.people（設定頁編輯），不寫入程式碼
 const spPeopleList = () => { const v = S.settings['split.people']; return v == null ? SPLIT_PEOPLE_DEF : String(v).split(/[,，、]/).map(x => x.trim()).filter(x => x && x !== '-'); };
-const mealOfTs = iso => { const h = new Date(iso).getHours(), m = h >= 5 && h < 11 ? '早餐' : h >= 11 && h < 16 ? '午餐' : h >= 17 && h < 23 ? '晚餐' : '零食';
+const mealOfTs = iso => { const m = '餐飲'; // 早／午／晚餐已合併
   return (SECTIONS['日常'] || []).some(x => x[0] === m) ? m : spDefItem('日常'); };
 S.splits = lsGet('splitsCfg', []); S.spEdit = null; S.spLoaded = false;
 const spPend = () => lsGet('splitsPending', {});
 const spUnit = c => { try { return 10 ** new Intl.NumberFormat('en', {style:'currency', currency:c}).resolvedOptions().maximumFractionDigits; } catch(e){ return 100; } };
 const spMoney = (minor, unit, c) => c === 'HKD' ? money(minor / unit) : curMoney(minor / unit, c);
-const spDefItem = sec => { const names = (SECTIONS[sec] || []).map(x => x[0]), pref = {旅遊:'餐飲', 日常:'晚餐'}[sec]; return names.includes(pref) ? pref : names[0] || ''; };
+const spDefItem = sec => { const names = (SECTIONS[sec] || []).map(x => x[0]), pref = {旅遊:'餐飲', 日常:'餐飲'}[sec]; return names.includes(pref) ? pref : names[0] || ''; };
 const spClone = sp => JSON.parse(JSON.stringify(sp));
 function spNewExp(sp){ const sec = sp.trip ? '旅遊' : '日常'; return { id:uid().replace(/-/g,'').slice(0,8), desc:'', amt:'', payer:sp.data.people.includes(ME) ? ME : sp.data.people[0] || '', mode:'eq', inc:{}, w:{}, x:{}, sec, item:spDefItem(sec) }; }
 function spNew(){
@@ -2053,7 +2058,7 @@ function spExpHtml(sp, e, i){
   return `<div class="card sp-exp">
     <div class="sp-head"><strong>${n > 1 ? `支出 ${i + 1}` : '支出'}</strong>${n > 1 ? `<button class="ghost" type="button" data-sprme="${i}">刪除</button>` : ''}</div>
     <div class="re-grid" style="margin-top:10px">
-      <label class="field" style="grid-column:1/-1">內容（可留空）<input class="text-in" data-spe="${i}" data-k="desc" value="${esc(e.desc)}" maxlength="30" placeholder="例如 晚餐、的士、酒店" autocomplete="off"></label>
+      <label class="field" style="grid-column:1/-1">內容（可留空）<input class="text-in" data-spe="${i}" data-k="desc" value="${esc(e.desc)}" maxlength="30" placeholder="例如 餐飲、的士、酒店" autocomplete="off"></label>
       <label class="field">金額（${esc(CUR[sp.currency]?.[1] || sp.currency)}）<input class="text-in sp-amt" data-spe="${i}" data-k="amt" inputmode="decimal" value="${esc(e.amt)}" placeholder="0" autocomplete="off"></label>
       <label class="field">付款人<select class="text-in" data-spe="${i}" data-k="payer">${P.includes(e.payer) ? '' : '<option value="" selected>選擇付款人</option>'}${P.map(p => `<option${p === e.payer ? ' selected' : ''}>${esc(p)}</option>`).join('')}</select></label>
     </div>
@@ -2318,7 +2323,7 @@ function applyLaunchParams(){
   if (q.get('p') && TITLES[q.get('p')]){ go(q.get('p')); return true; }
   const sec = q.get('s'), item = q.get('i');
   if (sec && SECTIONS[sec]){
-    go('input'); S.section = sec; S.item = SECTIONS[sec].some(x => x[0] === item) ? item : null; S.cycle = 'M';
+    go('input'); S.section = sec; S.item = SECTIONS[sec].some(x => x[0] === normItem(sec, item)) ? normItem(sec, item) : null; // 舊捷徑（記早餐等）亦打開餐飲 S.cycle = 'M';
     renderTabs(); setCur(sec === '旅遊' ? (tripObj(S.trip)?.currency || lsGet('lastTravelCur', 'HKD')) : 'HKD');
     if (S.item) setTimeout(() => { $('#amount').focus(); keepSaveVisible(); }, 300);
     return true;
@@ -2328,7 +2333,7 @@ function applyLaunchParams(){
 
 /* ---------- 搜尋：篩選標籤 ----------
    輸入時顯示建議（類別、項目、旅程、常用備註，及「搜尋『…』」關鍵字），按一下加入為標籤；可疊加多個條件：
-   不同種類之間為「且」（例如 日常 ＋ 午餐 ＋ 大快活），同種類之間為「或」（例如 日常 或 其他）。
+   不同種類之間為「且」（例如 日常 ＋ 餐飲 ＋ 大快活），同種類之間為「或」（例如 日常 或 其他）。
    伺服器（API_VERSION ≥ 10）以參數 f 篩選全部紀錄；舊版伺服器則以第一個條件查詢，再在本機套用其餘條件。
    結果：總支出／筆數／平均每次＋按日分組列表，每筆附類別及項目標籤（按標籤可加入為條件）。 */
 S.srF = [];
@@ -2372,7 +2377,7 @@ function renderSearch(){
   $$('#srRange [data-r]').forEach(b => b.classList.toggle('active', Number(b.dataset.r) === S.srRange));
   srRenderBox();
   if (S.srF.length) doSearch();
-  else $('#srBody').innerHTML = '<p class="muted small" style="margin:14px 4px">選擇或輸入條件，例如「日常」＋「午餐」，或店名「大快活」。可疊加多個條件：不同種類同時符合，同種類任一符合。</p>';
+  else $('#srBody').innerHTML = '<p class="muted small" style="margin:14px 4px">選擇或輸入條件，例如「日常」＋「餐飲」，或店名「大快活」。可疊加多個條件：不同種類同時符合，同種類任一符合。</p>';
 }
 const srAdd = f => { S.srF.push(f); $('#srQ').value = ''; renderSearch(); };
 async function doSearch(){
@@ -2382,7 +2387,7 @@ async function doSearch(){
   try {
     const j = await get({ action:'search', q:F[0].v, from, f:JSON.stringify(F) });
     if (JSON.stringify(F) !== JSON.stringify(S.srF)) return; // 條件已改變
-    let srv = j.rows, count = j.count, total = j.total;
+    let srv = normRows(j.rows), count = j.count, total = j.total;
     if (!j.filtered){ srv = srv.filter(r => srMatch(r, F)); count = srv.length; total = sum(srv); } // 舊版伺服器：本機套用其餘條件
     const local = getQ().filter(r => (!from || r.date.slice(0,7) >= from) && srMatch(r, F)).map(r => ({...r, pending:true}));
     const rows = [...local, ...srv].sort((a,b) => b.date.localeCompare(a.date)); S.searchRows = rows;

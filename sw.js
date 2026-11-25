@@ -1,5 +1,5 @@
 /* 記帳簿 Service Worker：離線開啟網頁本身；資料仍由 index.html 的本機佇列處理 */
-const VERSION = 'expense-v3';
+const VERSION = 'expense-v4';
 const SHELL = ['./', './index.html', './classic.html', './manifest.json', './icon.svg', './icon-192.png', './icon-512.png', './apple-touch-icon.png', './sc-breakfast.png', './sc-lunch.png', './sc-dinner.png', './sc-inbox.png'];
 
 self.addEventListener('install', e => {

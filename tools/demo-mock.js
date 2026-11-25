@@ -58,7 +58,7 @@
     FIXED.forEach(f => add(ymd(first), '固定', f.item, f.amount, f.remark, { fixedId: f.id }));
     for (let d = 1; d <= last; d++) {
       const date = ymd(new Date(first.getFullYear(), first.getMonth(), d)), wk = new Date(first.getFullYear(), first.getMonth(), d).getDay();
-      const meal = (it, p) => { if (rnd() < p) { const [rm, a, b] = pick(MEALS[it]); add(date, '日常', it, between(a, b), rm); } };
+      const meal = (it, p) => { if (rnd() < p) { const [rm, a, b] = pick(MEALS[it]); add(date, '日常', '餐飲', between(a, b), rm); } };
       meal('早餐', 0.55); meal('午餐', wk > 0 && wk < 6 ? 0.9 : 0.5); meal('晚餐', 0.6);
       if (rnd() < 0.4) add(date, '日常', '飲品', between(18, 38), pick(['手搖茶', '咖啡店', '']));
       if (rnd() < 0.25) add(date, '日常', '交通', between(12, 60), pick(['的士', '小巴', '']));
@@ -81,20 +81,20 @@
   const SPLITS = [{ id: 'spdemo1', name: '週五打邊爐', date: spDate, currency: 'HKD', fxRate: 1, trip: '', status: 'settled',
     settledAt: new Date(Date.now() - 2 * 864e5).toISOString(), updatedAt: new Date(Date.now() - 2 * 864e5).toISOString(),
     data: { people: ['我', '阿明', '小美', '阿傑'], done: { '阿明|我|32000': true }, unit: 100,
-      expenses: [{ id: 'e1', desc: '火鍋', amt: '1,280', payer: '我', mode: 'eq', inc: {}, w: {}, x: {}, sec: '日常', item: '晚餐' }],
+      expenses: [{ id: 'e1', desc: '火鍋', amt: '1,280', payer: '我', mode: 'eq', inc: {}, w: {}, x: {}, sec: '日常', item: '餐飲' }],
       transfers: [{ from: '阿明', to: '我', amt: 32000, done: true }, { from: '小美', to: '我', amt: 32000, done: false }, { from: '阿傑', to: '我', amt: 32000, done: false }] } }];
-  add(spDate, '日常', '晚餐', 320, 'AA：週五打邊爐·火鍋', { id: 'spdemo1_e1', splitId: 'spdemo1' });
+  add(spDate, '日常', '餐飲', 320, 'AA：週五打邊爐·火鍋', { id: 'spdemo1_e1', splitId: 'spdemo1' });
   const ITEMS = {};
   const SETTINGS = { 'budget.var': 6500, 'budget.total': 9000 };
   const hh = h => new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, 12).toISOString();
   const INBOX = [
     { id: 'ib1', ts: hh(12), source: '信用卡 8166', merchant: 'WECHAT PAY HONG KONG', currency: 'HKD', origAmount: 68.5, amount: 68.5, date: today,
-      raw: '（示範）您的信用卡 8166 在 "WECHAT PAY HONG KONG" 有一項簽賬，金額為 HKD 68.50。', suggest: { section: '日常', item: '@meal', remark: '', generic: true } },
+      raw: '（示範）您的信用卡 8166 在 "WECHAT PAY HONG KONG" 有一項簽賬，金額為 HKD 68.50。', suggest: { section: '日常', item: '餐飲', remark: '', generic: true } },
     { id: 'ib2', ts: hh(9), source: '信用卡 0015', merchant: 'ACME COFFEE ROASTERS', currency: 'HKD', origAmount: 42, amount: 42, date: today,
-      raw: '（示範）您的信用卡 0015 於今日在 ACME COFFEE ROASTERS 交易 HKD42.00。', suggest: { section: '日常', item: '@meal', remark: 'ACME COFFEE ROASTERS' } }
+      raw: '（示範）您的信用卡 0015 於今日在 ACME COFFEE ROASTERS 交易 HKD42.00。', suggest: { section: '日常', item: '餐飲', remark: 'ACME COFFEE ROASTERS' } }
   ];
   const MERCH = [{ merchant: 'HK TRAVEL AGENCY', section: '旅遊', item: '機票', remark: '旅行社', mode: 'auto', count: 2 }];
-  const mealOf = iso => { const h = new Date(iso).getHours(); return h >= 5 && h < 11 ? '早餐' : h < 16 ? '午餐' : h >= 17 && h < 23 ? '晚餐' : '零食'; };
+  const mealOf = () => '餐飲';
 
   // ---- 模擬 API ----
   const get = p => {

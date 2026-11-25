@@ -31,36 +31,12 @@
   ],
   "shortcuts": [
     {
-      "name": "記早餐",
-      "short_name": "記早餐",
-      "url": "./?s=日常&i=早餐",
-      "icons": [
-        {
-          "src": "sc-breakfast.png",
-          "sizes": "192x192",
-          "type": "image/png"
-        }
-      ]
-    },
-    {
-      "name": "記午餐",
-      "short_name": "記午餐",
-      "url": "./?s=日常&i=午餐",
+      "name": "記餐飲",
+      "short_name": "記餐飲",
+      "url": "./?s=日常&i=餐飲",
       "icons": [
         {
           "src": "sc-lunch.png",
-          "sizes": "192x192",
-          "type": "image/png"
-        }
-      ]
-    },
-    {
-      "name": "記晚餐",
-      "short_name": "記晚餐",
-      "url": "./?s=日常&i=晚餐",
-      "icons": [
-        {
-          "src": "sc-dinner.png",
           "sizes": "192x192",
           "type": "image/png"
         }

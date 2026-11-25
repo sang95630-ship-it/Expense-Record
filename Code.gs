@@ -22,7 +22,9 @@ const MERCH_HEAD = ['Merchant', 'Section', 'Item', 'Remark', 'Mode', 'Count', 'U
 const TRIPS = 'Trips', TRIPS_HEAD = ['Name', 'Start', 'End', 'Currency', 'Note']; // Start／End 為純文字 yyyy-MM-dd
 const SPLITS = 'Splits', SPLITS_HEAD = ['ID', 'Name', 'Date', 'Currency', 'FxRate', 'Trip', 'Status', 'Data', 'UpdatedAt', 'SettledAt']; // 分帳（第 6 期）
 const SPLIT_REMIND_DAYS = 3;       // 分帳確認後 N 日仍有轉帳未清 → Signal 提醒一次
-const MEAL = '@meal'; // 項目「按時間」：早／午／晚餐由交易時間決定
+const MEAL = '@meal'; // 舊規則的「按時間」項目：早／午／晚餐已合併為「餐飲」
+const LEGACY_MEAL = ['早餐', '午餐', '晚餐'];
+function normItem_(sec, item) { return sec === '日常' && LEGACY_MEAL.indexOf(String(item)) >= 0 ? '餐飲' : String(item); }
 
 function tz_() { return SpreadsheetApp.getActive().getSpreadsheetTimeZone(); }
 function fmt_(d, p) { return Utilities.formatDate(d, tz_(), p); }
@@ -217,7 +219,7 @@ function doGet(e) {
         const n = String(r[11] || ''); if (!r[0] || !n) return;
         const t = map[n] = map[n] || { name: n, start: '', end: '', currency: '', note: '', total: 0, count: 0, byItem: {}, byCur: {}, first: '', last: '' };
         const amt = Number(r[4]), cur = String(r[8] || 'HKD'), d = ymd_(r[1]);
-        t.total += amt; t.count++; t.byItem[r[3]] = (t.byItem[r[3]] || 0) + amt;
+        t.total += amt; t.count++; const it = normItem_(r[2], r[3]); t.byItem[it] = (t.byItem[it] || 0) + amt;
         if (cur !== 'HKD') t.byCur[cur] = (t.byCur[cur] || 0) + Number(r[10] || 0);
         if (!t.first || d < t.first) t.first = d; if (!t.last || d > t.last) t.last = d;
       });
@@ -253,7 +255,7 @@ function doGet(e) {
         const by = t => f.filter(x => x && x.t === t).map(x => String(x.v));
         const sec = by('sec'), item = by('item'), trip = by('trip'), text = by('text').map(x => x.toLowerCase());
         const hitF = rows_(REC).filter(r => r[0] && ym_(r[1]) >= from && (!sec.length || sec.indexOf(String(r[2])) >= 0)
-          && (!item.length || item.indexOf(String(r[3])) >= 0) && (!trip.length || trip.indexOf(String(r[11] || '')) >= 0)
+          && (!item.length || item.indexOf(normItem_(r[2], r[3])) >= 0) && (!trip.length || trip.indexOf(String(r[11] || '')) >= 0)
           && text.every(t => [r[2], r[3], r[5]].some(x => String(x).toLowerCase().indexOf(t) >= 0)))
           .map(recObj_).sort((a, b) => b.date.localeCompare(a.date));
         return { rows: hitF.slice(0, 300), count: hitF.length, total: hitF.reduce((a, r) => a + r.amount, 0), filtered: true };
@@ -477,7 +479,7 @@ function merchKey_(m) { return String(m || '').replace(/\.{2,}|…/g, '').replac
 function isGeneric_(key) { return GENERIC.test(key); }
 function mealOf_(d) {
   const h = Number(fmt_(d, 'H')) + Number(fmt_(d, 'm')) / 60;
-  return h >= 5 && h < 11 ? '早餐' : h >= 11 && h < 16 ? '午餐' : h >= 17 && h < 23 ? '晚餐' : '零食';
+  return '餐飲'; // 早／午／晚餐已合併
 }
 function parseSms_(text, ts) {
   for (const p of PARSERS) {
@@ -552,7 +554,7 @@ function inbox_(b) {
   const dupOf = v.find(r => r[0] !== id && r[9] !== 'skip' && Number(r[7]) === hkd && r[1] instanceof Date && Math.abs(r[1] - ts) < DUP_MINUTES * 60000);
   const suggest = rule && rule.mode !== 'ignore'
     ? { section: rule.section, item: rule.item, remark: rule.remark || p.merchant, rule: true }
-    : { section: '日常', item: MEAL, remark: generic ? '' : p.merchant, generic: generic };
+    : { section: '日常', item: '餐飲', remark: generic ? '' : p.merchant, generic: generic };
   if (dupOf) suggest.dup = `可能與 ${fmt_(dupOf[1], 'HH:mm')} 的「${dupOf[4]}」${money_('HKD', hkd)} 重複`;
   let status = 'pending', recId = '';
   const what = `${p.merchant} ${money_(p.cur, p.amt)}${p.cur !== 'HKD' ? `（≈ ${money_('HKD', hkd)}）` : ''}`;
@@ -578,7 +580,7 @@ function findRow_(sh, id) {
 
 function recObj_(r) {
   return {
-    id: r[0], date: ymd_(r[1]), section: r[2], item: r[3], amount: Number(r[4]), remark: String(r[5] || ''),
+    id: r[0], date: ymd_(r[1]), section: r[2], item: normItem_(r[2], r[3]), amount: Number(r[4]), remark: String(r[5] || ''),
     createdAt: r[6] instanceof Date ? r[6].toISOString() : String(r[6] || ''), fixedId: r[7] || '',
     currency: String(r[8] || 'HKD'), fxRate: Number(r[9]) || 1,
     origAmount: r[10] === '' || r[10] == null ? Number(r[4]) : Number(r[10]), trip: String(r[11] || ''), splitId: String(r[12] || '')
