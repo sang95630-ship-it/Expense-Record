@@ -889,8 +889,9 @@ $('#menuBtn').addEventListener('click', openDrawer);
 let sw = null;
 addEventListener('touchstart', e => {
   if (isDesktop() || e.touches.length !== 1 || document.querySelector('.overlay.show')) return;
-  if (e.target.closest('input,select,textarea,.wheel,.trend svg,.combo-row')) return; // 避免與輸入及橫向操作衝突
   const t = e.touches[0];
+  if (e.target.closest('input,select,textarea,.wheel,.trend svg,.combo-row')) return; // 避免與輸入及橫向操作衝突
+  if (e.target.closest('#itemGrid') && t.clientX > EDGE) return; // 項目格左右拉＝切換類別；只有由螢幕左邊緣拉出才開側欄
   sw = { x:t.clientX, y:t.clientY, open:sidebar.classList.contains('open'), active:false, pos:0, lx:t.clientX, lt:e.timeStamp, v:0 };
 }, { passive:true });
 addEventListener('touchmove', e => {
@@ -1016,7 +1017,51 @@ $('#fxRate').addEventListener('input', e => {
 $('#fxSrc').addEventListener('click', () => { const m = lsGet('fxManual', {}); delete m[S.cur]; lsSet('fxManual', m); setCur(S.cur); });
 function renderDate(){ $('#dateText').textContent = dateLabel(S.date); $('#todayTag').textContent = S.date === todayStr() ? '今天' : ''; S.tripTouched = false; if (typeof renderTripRow === 'function') renderTripRow(); }
 $('#cycleSeg').addEventListener('click', e => { const b = e.target.closest('[data-cy]'); if (!b) return; S.cycle = b.dataset.cy; renderTabs(); });
-$$('.tab').forEach(b => b.addEventListener('click', () => { S.section = b.dataset.s; S.item = null; S.cycle = 'M'; renderTabs(); setCur(S.section === '旅遊' ? (tripObj(S.trip)?.currency || lsGet('lastTravelCur', 'HKD')) : 'HKD'); }));
+function pickSection(sec){ S.section = sec; S.item = null; S.cycle = 'M'; renderTabs(); setCur(S.section === '旅遊' ? (tripObj(S.trip)?.currency || lsGet('lastTravelCur', 'HKD')) : 'HKD'); }
+$$('.tab').forEach(b => b.addEventListener('click', () => pickSection(b.dataset.s)));
+
+/* ---------- 項目格左右拉：切換類別（旅遊 ⇄ 日常 ⇄ 固定 ⇄ 其他） ----------
+   向左拉＝下一個類別，向右拉＝上一個；格子跟隨手指（兩端沒有下一個時加阻力），放手時拉過 22% 寬度或快速撥動即切換，
+   舊格滑出、新格由另一邊滑入。垂直捲動優先：先判斷方向，水平才接手。由螢幕左邊緣（EDGE 內）開始的拉動仍然打開側欄 */
+const EDGE = 24;
+(() => {
+  const g = $('#itemGrid'); let st = null;
+  const reduce = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const set = (x, ms, ease) => { g.style.transition = ms ? `transform ${ms}ms ${ease || 'cubic-bezier(.2,.8,.2,1)'}, opacity ${ms}ms` : 'none'; g.style.transform = x ? `translateX(${x}px)` : ''; };
+  g.addEventListener('touchstart', e => {
+    if (e.touches.length !== 1 || sidebar.classList.contains('open')) return;
+    const t = e.touches[0]; if (t.clientX <= EDGE) return;
+    st = { x:t.clientX, y:t.clientY, dir:0, dx:0, lx:t.clientX, lt:e.timeStamp, v:0 };
+  }, { passive:true });
+  g.addEventListener('touchmove', e => {
+    if (!st) return;
+    const t = e.touches[0], dx = t.clientX - st.x, dy = t.clientY - st.y;
+    if (!st.dir){
+      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+      st.dir = Math.abs(dx) > Math.abs(dy) * 1.3 ? 1 : -1; // 1＝水平（切換類別），-1＝垂直（交回頁面捲動）
+    }
+    if (st.dir < 0) return;
+    e.preventDefault();
+    const i = ORDER.indexOf(S.section), edge = (dx > 0 && i === 0) || (dx < 0 && i === ORDER.length - 1);
+    st.dx = edge ? dx * 0.3 : dx; // 兩端加阻力
+    const dt = e.timeStamp - st.lt; if (dt > 0) st.v = (t.clientX - st.lx) / dt; st.lx = t.clientX; st.lt = e.timeStamp;
+    set(st.dx, 0); g.style.opacity = 1 - Math.min(.35, Math.abs(st.dx) / g.offsetWidth);
+  }, { passive:false });
+  const end = () => {
+    if (!st || st.dir !== 1){ st = null; return; }
+    const w = g.offsetWidth, i = ORDER.indexOf(S.section), dx = st.dx, v = st.v; st = null;
+    const step = (dx < -w * .22 || v < -.45) ? 1 : (dx > w * .22 || v > .45) ? -1 : 0, j = i + step;
+    if (!step || j < 0 || j >= ORDER.length){ set(0, 380, 'cubic-bezier(.2,1.3,.4,1)'); g.style.opacity = ''; return; } // 回彈
+    try { navigator.vibrate?.(6); } catch(e){}
+    if (reduce()){ set(0, 0); g.style.opacity = ''; return pickSection(ORDER[j]); }
+    set(-step * w, 160, 'cubic-bezier(.4,0,1,1)'); g.style.opacity = '0';
+    setTimeout(() => {
+      pickSection(ORDER[j]); set(step * w * .6, 0);
+      requestAnimationFrame(() => requestAnimationFrame(() => { set(0, 320); g.style.opacity = ''; }));
+    }, 160);
+  };
+  g.addEventListener('touchend', end); g.addEventListener('touchcancel', end);
+})();
 $('#itemGrid').addEventListener('click', e => { const c = e.target.closest('.chip'); if (!c) return; S.item = c.dataset.item; renderTabs(); $('#amount').focus(); keepSaveVisible(); });
 
 /* ---------- 鍵盤彈出時，確保「確認」按鈕不被遮住 ---------- */
