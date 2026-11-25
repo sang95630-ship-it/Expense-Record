@@ -1157,9 +1157,10 @@ async function renderRecent(){
   }
 }
 const HL_BIG = 200, HL_MID = 100; // 大額高亮門檻（HKD）
-function recRow(r, withDel, noDate, hl){
+// dm：日期以 DD/MM 顯示（固定支出分頁）
+function recRow(r, withDel, noDate, hl, dm){
   const lv = hl && r.section !== '固定' ? (r.amount >= HL_BIG ? ' hl-big' : r.amount >= HL_MID ? ' hl-mid' : '') : '';
-  const sub = `${noDate ? '' : r.date.slice(5).replace('-','/') + '，'}${r.section}${r.remark ? '，'+esc(r.remark) : ''}${r.pending ? '，待同步' : ''}`;
+  const sub = `${noDate ? '' : (dm ? `${r.date.slice(8,10)}/${r.date.slice(5,7)}` : r.date.slice(5).replace('-','/')) + '，'}${r.section}${r.remark ? '，'+esc(r.remark) : ''}${r.pending ? '，待同步' : ''}`;
   return `<div class="rec${lv}"><span class="em">${iconOf(r.section,r.item)}</span>
     <div class="main"><div>${esc(r.item)}</div><div class="sub">${sub}</div></div>
     <span class="amt">${amtHtml(r)}</span>
@@ -1255,7 +1256,7 @@ async function renderExpense(){
       `<button type="button" role="tab" data-etab="${k}" class="${k === tab ? 'active' : ''}" aria-selected="${k === tab}">${l}</button>`).join('')}</div>`;
     if (tab === 'fix'){
       const list = [...fixRows].sort((a,b) => b.date.localeCompare(a.date) || b.amount - a.amount);
-      html += list.length ? `<div class="card list">${list.map(r => recRow(r, true)).join('')}</div>
+      html += list.length ? `<div class="card list">${list.map(r => recRow(r, true, false, false, true)).join('')}</div>
         <div class="fx-total"><span class="muted">本月固定支出 ${list.length} 筆</span><b class="num">${money(round2(fixTotal))}</b></div>`
         : empty('本月未有固定支出入帳。');
     } else {
