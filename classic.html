@@ -925,6 +925,7 @@ const isDesktop = () => matchMedia('(min-width:900px)').matches;
 function closeDrawer(){ sidebar.classList.remove('open'); $('#scrim').classList.remove('show'); }
 function openDrawer(){ sidebar.classList.add('open'); $('#scrim').classList.add('show'); }
 function go(p){
+  releasePage();
   if (p === 'details'){
     closeDrawer();
     if (cfg.sheetUrl) window.open(cfg.sheetUrl, '_blank', 'noopener');
@@ -995,35 +996,61 @@ addEventListener('touchend', () => {
 addEventListener('touchcancel', () => { if (sw?.active){ sidebar.style.transition = sidebar.style.transform = $('#scrim').style.transition = $('#scrim').style.opacity = ''; } sw = null; });
 
 /* ---------- 摺疊動畫：高度＋內容淡入淡出，與箭嘴同一節奏 ----------
-   展開：先固定高度再打開，以 scrollHeight 一次量度（避免兩次強制排版）
-   曲線：展開用減速曲線 300ms，收起用加速曲線 240ms（Material emphasized） */
-const FOLD_OPEN = { duration:300, easing:'cubic-bezier(.2,0,0,1)' };
-const FOLD_CLOSE = { duration:240, easing:'cubic-bezier(.3,0,.8,.15)' };
+   · 只動畫「看得見」的部分：長清單在螢幕以外的高度即時加減，動畫距離最多到螢幕底（不論有多少筆都同樣快和順）
+   · 停用瀏覽器的捲動錨定（overflow-anchor），避免收起時因錨點元素消失而令頁面跳一下
+   · 展開用減速曲線、收起用標準曲線（不再用尾段急加速的曲線）；時間按看得見的距離 200–380ms
+   · 動畫中途可反轉；系統「減少動態效果」時不播放 */
+/* 保持頁面高度：內容變短（收起長清單、切換到較短分頁）時，暫時以 min-height 撐住目前頁面，
+   令畫面內容原位不動、不會因頁底被截而向下移；多出的空位只在頁底，向上捲時隨即收回（看不到變化），換頁或重畫時解除 */
+let holdPg = null, holdAt = 0;
+function holdPageHeight(){
+  const pg = document.querySelector('.page:not([hidden])'); if (!pg) return;
+  if (holdPg !== pg){ releasePage(); holdPg = pg; }
+  pg.style.minHeight = pg.offsetHeight + 'px'; holdAt = performance.now();
+}
+function releasePage(){ if (holdPg){ holdPg.style.minHeight = ''; holdPg = null; } }
+let holdT = false;
+addEventListener('scroll', () => {
+  if (!holdPg || holdT || performance.now() - holdAt < 700) return; holdT = true; // 動畫期間不調整
+  requestAnimationFrame(() => { holdT = false; if (!holdPg) return;
+    const need = Math.ceil(innerHeight - holdPg.getBoundingClientRect().top); // 剛好填滿至螢幕底
+    holdPg.style.minHeight = ''; const nat = holdPg.offsetHeight;
+    if (nat >= need) releasePage(); else holdPg.style.minHeight = need + 'px';
+  });
+}, { passive:true });
+const FOLD_OPEN = { duration:300, easing:'cubic-bezier(.2,.8,.2,1)' };
+const FOLD_CLOSE = { duration:260, easing:'cubic-bezier(.4,0,.2,1)' };
 document.addEventListener('click', e => {
   const s = e.target.closest('details.wk>summary, details.fold>summary'); if (!s) return;
   const d = s.parentElement, body = d.querySelector(':scope>:not(summary)'); e.preventDefault();
   if (matchMedia('(prefers-reduced-motion: reduce)').matches){ d.open = !d.open; return; }
   const opening = !d.open || d.classList.contains('closing');
-  const start = d.getBoundingClientRect().height;
+  const r = d.getBoundingClientRect(), start = r.height, room = Math.max(0, innerHeight - r.top) + 40; // 由卡頂至螢幕底（再多 40px）
   d._anim?.cancel(); d._fade?.cancel();
-  d.style.overflow = 'hidden'; d.style.height = start + 'px';
+  document.documentElement.style.overflowAnchor = 'none';
+  d.style.overflow = 'hidden';
   let end;
   if (opening){
-    d.classList.remove('closing'); d.open = true;
-    end = d.scrollHeight; // 高度已固定，量度一次即可
-    d._fade = body?.animate({ opacity:[0, 1], transform:['translateY(-6px)', 'none'] }, { duration:260, delay:40, easing:'cubic-bezier(.2,0,0,1)', fill:'backwards' });
+    d.style.height = start + 'px'; d.classList.remove('closing'); d.open = true;
+    end = d.scrollHeight;
+    d._fade = body?.animate({ opacity:[0, 1], transform:['translateY(-6px)', 'none'] }, { duration:240, delay:30, easing:'cubic-bezier(.2,0,0,1)', fill:'backwards' });
   } else {
+    holdPageHeight();
     d.classList.add('closing');
     const cs = getComputedStyle(d);
     end = s.offsetHeight + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
-    d._fade = body?.animate({ opacity:[1, 0] }, { duration:150, easing:'linear', fill:'forwards' });
+    d._fade = body?.animate({ opacity:[1, 0] }, { duration:140, easing:'linear', fill:'forwards' });
   }
-  // 時間按距離調整：短距離約 0.26 秒，長清單（例如 9 項固定項目約 580px）最多 0.45 秒，速度感一致
-  const base = opening ? FOLD_OPEN : FOLD_CLOSE, dist = Math.abs(end - start);
-  const a = d._anim = d.animate({ height:[start + 'px', end + 'px'] }, { ...base, duration:Math.round(Math.min(450, Math.max(base.duration - 40, 200 + dist * 0.25))) });
+  // 只動畫看得見的範圍：螢幕以外的部分在動畫開始（收起）或結束（展開）時一次過完成，肉眼看不到
+  const from = opening ? start : Math.min(start, Math.max(end, room));
+  const to = opening ? Math.min(end, Math.max(start, room)) : end;
+  d.style.height = from + 'px';
+  const base = opening ? FOLD_OPEN : FOLD_CLOSE, dist = Math.abs(to - from);
+  const a = d._anim = d.animate({ height:[from + 'px', to + 'px'] }, { ...base, duration:Math.round(Math.min(380, Math.max(200, 160 + dist * .35))) });
   a.onfinish = () => {
     if (!opening){ d.open = false; d.classList.remove('closing'); d._fade?.cancel(); }
     d.style.height = d.style.overflow = ''; d._anim = d._fade = null;
+    document.documentElement.style.overflowAnchor = '';
   };
 });
 $('#scrim').addEventListener('click', closeDrawer);
@@ -1098,6 +1125,12 @@ $('#cycleSeg').addEventListener('click', e => { const b = e.target.closest('[dat
 function pickSection(sec){ S.section = sec; S.item = null; S.cycle = 'M'; renderTabs(); setCur(S.section === '旅遊' ? (tripObj(S.trip)?.currency || lsGet('lastTravelCur', 'HKD')) : 'HKD'); }
 $$('.tab').forEach(b => b.addEventListener('click', () => pickSection(b.dataset.s)));
 
+/* 內容換成另一頁後，高度由舊值平滑過渡到新值（.grid-clip 負責裁切） */
+function animHeight(el, from){
+  if (!el || !from || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const to = el.offsetHeight, d = Math.abs(to - from); if (d < 2) return;
+  el.animate({ height:[from + 'px', to + 'px'] }, { duration:Math.round(Math.min(380, 200 + d * .25)), easing:'cubic-bezier(.2,.8,.2,1)' });
+}
 /* ---------- 左右拉切換（輪播）：項目格切換類別、支出明細切換分頁 ----------
    開始橫向拖動時，把上一個／下一個的內容（預覽，.pager-ghost）放在左右兩側，與目前內容一起跟隨手指；
    放手後按位置及速度決定，以一段連續動畫滑到相鄰一頁（時間按剩餘距離及手指速度，150–360ms），
@@ -1108,7 +1141,8 @@ const EDGE = 24, GAP = 16;
 function makePager(o){
   let st = null, busy = false;
   const reduce = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const move = (el, x, ms, ease) => { el.style.transition = ms ? `transform ${ms}ms ${ease}` : 'none'; el.style.transform = x ? `translate3d(${x}px,0,0)` : ''; };
+  const move = (el, x, ms, ease, h) => { el.style.transition = ms ? `transform ${ms}ms ${ease}, height ${ms}ms ${ease}` : 'none'; el.style.transform = x ? `translate3d(${x}px,0,0)` : '';
+    if (h != null) el.style.height = h ? h + 'px' : ''; };
   o.root.addEventListener('touchstart', e => {
     const el = e.target.closest(o.sel);
     if (!el || busy || e.touches.length !== 1 || sidebar.classList.contains('open')) return;
@@ -1125,7 +1159,8 @@ function makePager(o){
         st.w = st.el.offsetWidth + GAP;
         [-1, 1].forEach(d => { const j = st.i + d; if (j < 0 || j >= o.count) return;
           const g = document.createElement('div'); g.className = 'pager-ghost ' + (o.ghostClass || ''); g.setAttribute('aria-hidden', 'true');
-          g.style.left = `calc(${d * 100}% + ${d * GAP}px)`; g.innerHTML = o.html(j); st.el.appendChild(g); });
+          g.style.left = `calc(${d * 100}% + ${d * GAP}px)`; g.innerHTML = o.html(j); st.el.appendChild(g); st['h' + d] = g.offsetHeight; });
+        st.h0 = st.el.offsetHeight; // 目前一頁的高度；拖動時按比例過渡至相鄰一頁的高度
       }
     }
     if (st.dir < 0) return;
@@ -1133,22 +1168,23 @@ function makePager(o){
     const edge = (dx > 0 && st.i === 0) || (dx < 0 && st.i === o.count - 1);
     st.dx = edge ? dx / (1 + Math.abs(dx) / 120) : dx; // 兩端：橡皮筋阻力
     const dt = e.timeStamp - st.lt; if (dt > 0) st.v = st.v * .4 + (t.clientX - st.lx) / dt * .6; st.lx = t.clientX; st.lt = e.timeStamp;
-    move(st.el, st.dx, 0);
+    const nh = st['h' + (st.dx < 0 ? 1 : -1)], f = Math.min(1, Math.abs(st.dx) / st.w);
+    move(st.el, st.dx, 0, '', nh ? Math.round(st.h0 + (nh - st.h0) * f) : st.h0);
   }, { passive:false });
   const end = () => {
     if (!st || st.dir !== 1){ st = null; return; }
-    const { el, w, i, dx, v } = st; st = null;
+    const { el, w, i, dx, v, h0 } = st, hT = st['h' + (dx < 0 ? 1 : -1)]; st = null;
     let step = (dx < -w * .2 || v < -.35) ? 1 : (dx > w * .2 || v > .35) ? -1 : 0;
     if (Math.sign(v) === -Math.sign(dx) && Math.abs(v) > .35) step = 0; // 回撥：取消
     const j = i + step, ok = step && j >= 0 && j < o.count;
     const target = ok ? -step * w : 0, dist = Math.abs(target - dx);
     const ms = reduce() ? 0 : Math.round(Math.max(150, Math.min(360, Math.abs(v) > .3 ? dist / Math.abs(v) * 1.6 : 120 + dist * .6)));
-    const done = () => { busy = false; move(el, 0, 0); el.querySelectorAll(':scope > .pager-ghost').forEach(g => g.remove()); if (ok) o.commit(j); };
+    const done = () => { busy = false; move(el, 0, 0, '', 0); el.querySelectorAll(':scope > .pager-ghost').forEach(g => g.remove()); if (ok) o.commit(j); };
     if (!ms){ done(); return; }
     busy = true;
     if (ok) try { navigator.vibrate?.(6); } catch(e){}
-    move(el, target, ms, ok ? 'cubic-bezier(.22,.8,.25,1)' : 'cubic-bezier(.3,1.25,.5,1)');
-    let fired = false; const fin = ev => { if (fired || (ev && ev.target !== el)) return; fired = true; el.removeEventListener('transitionend', fin); done(); };
+    move(el, target, ms, ok ? 'cubic-bezier(.22,.8,.25,1)' : 'cubic-bezier(.3,1.25,.5,1)', ok && hT ? hT : h0);
+    let fired = false; const fin = ev => { if (fired || (ev && (ev.target !== el || ev.propertyName !== 'transform'))) return; fired = true; el.removeEventListener('transitionend', fin); done(); };
     el.addEventListener('transitionend', fin); setTimeout(fin, ms + 60); // 後備
   };
   o.root.addEventListener('touchend', end); o.root.addEventListener('touchcancel', end);
@@ -1416,7 +1452,7 @@ $('#expBody').addEventListener('toggle', e => {
 $('#expBody').addEventListener('click', e => { if (e.target.closest('[data-goto="splits"]')) return go('splits'); });
 $('#expBody').addEventListener('click', e => {
   const ed = e.target.closest('[data-edit]'), fx = e.target.closest('[data-fx]'), et = e.target.closest('[data-etab]');
-  if (et){ S.expTab = et.dataset.etab; lsSet('expTab', S.expTab); return renderExpense(); }
+  if (et){ holdPageHeight(); const h0 = $('#expPane')?.offsetHeight; S.expTab = et.dataset.etab; lsSet('expTab', S.expTab); return renderExpense().then(() => animHeight($('#expPane'), h0)); }
   if (ed) openRec(ed.dataset.edit);
   if (fx) openFixed(fx.dataset.fx);
 });
@@ -1426,17 +1462,17 @@ const FOLD_BTN = '<span class="fold-btn" aria-hidden="true"><svg width="14" heig
 const ANMODES = ['section','item'];
 makePager({ root:$('#anBody'), sel:'#anPane', count:ANMODES.length, index:() => Math.max(0, ANMODES.indexOf(S.anMode)),
   html:j => S.anPane ? S.anPane(ANMODES[j]) : '',
-  commit:j => { S.anMode = ANMODES[j];
+  commit:j => { holdPageHeight(); S.anMode = ANMODES[j];
     const pn = $('#anPane'); if (pn && S.anPane) pn.innerHTML = S.anPane(S.anMode);
     $$('#anBody [data-mode]').forEach(b => b.classList.toggle('active', b.dataset.mode === S.anMode));
-    renderAnalysis(); } });
+    const h0 = pn?.offsetHeight; renderAnalysis().then(() => animHeight($('#anPane'), h0)); } });
 const ETABS = ['var','fix','all'];
 makePager({ root:$('#expBody'), sel:'#expPane', count:ETABS.length, index:() => Math.max(0, ETABS.indexOf(S.expTab)),
   html:j => S.expPane ? S.expPane(ETABS[j]) : '',
-  commit:j => { S.expTab = ETABS[j]; lsSet('expTab', S.expTab);
+  commit:j => { holdPageHeight(); S.expTab = ETABS[j]; lsSet('expTab', S.expTab);
     const pn = $('#expPane'); if (pn && S.expPane) pn.innerHTML = S.expPane(S.expTab);
     $$('#expBody [data-etab]').forEach(b => { const on = b.dataset.etab === S.expTab; b.classList.toggle('active', on); b.setAttribute('aria-selected', on); });
-    renderExpense(); } });
+    const h0 = pn?.offsetHeight; renderExpense().then(() => animHeight($('#expPane'), h0)); } });
 S.expTab = (() => { try { return JSON.parse(localStorage.getItem('expTab')) || 'var'; } catch(e){ return 'var'; } })();
 S.wkOpen = {}; // 本次使用期間手動展開／收起的週（key = 月份|週首日）
 function weekGroups(rows, showFix){
@@ -1726,7 +1762,7 @@ function trendHtml(summ){
 }
 $('#anBody').addEventListener('click', e => {
   const b = e.target.closest('[data-mode]'), tn = e.target.closest('[data-tn]'), bar = e.target.closest('[data-ym]');
-  if (b){ S.anMode = b.dataset.mode; renderAnalysis(); }
+  if (b){ holdPageHeight(); const h0 = $('#anPane')?.offsetHeight; S.anMode = b.dataset.mode; renderAnalysis().then(() => animHeight($('#anPane'), h0)); }
   if (tn){ S.trendN = Number(tn.dataset.tn); renderAnalysis(); }
   if (bar && bar.dataset.ym !== S.anYm){ S.anYm = bar.dataset.ym; renderAnalysis(); scrollTo({top:0, behavior:'smooth'}); }
 });
