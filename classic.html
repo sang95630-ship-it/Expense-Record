@@ -285,7 +285,7 @@ details.wk .rec:last-child{border-bottom:0}
 .seg button.active{background:var(--surface);color:var(--ink);font-weight:500}
 /* 支出概覽：頂部雙總額（可控／固定）＋明細分頁 */
 .split2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:6px 0 2px}
-.split2 .t2{font-size:22px;font-weight:700;line-height:1.2;font-variant-numeric:tabular-nums}
+.split2 .t2{font-size:22px;font-weight:700;line-height:1.2;font-variant-numeric:tabular-nums;white-space:nowrap}
 .split2 .t2.dim{color:var(--muted)}
 .seg.full{display:grid;grid-template-columns:repeat(3,1fr);width:100%;margin:0 0 10px}
 .seg.full button{padding:7px 0}
@@ -1365,8 +1365,8 @@ async function renderExpense(){
     const bySec = ORDER.filter(s => s !== '固定').map(s => [s, sum(rows.filter(r => r.section === s))]);
     const max = Math.max(...bySec.map(x => x[1]), 1), bud = budgets();
     let html = `<div class="card${Object.keys(bud).some(k => k !== 'total') ? ' has-bud' : ''}"><div class="muted small">本月合計 ${money(total)}（${rows.length} 筆）</div>
-      <div class="split2"><div><div class="muted small">可控消費</div><div class="t2">${money(round2(varTotal))}</div></div>
-        <div><div class="muted small">固定支出</div><div class="t2 dim">${money(round2(fixTotal))}</div></div></div>
+      <div class="split2"><div><div class="muted small">可控消費</div><div class="t2">${money(Math.round(varTotal))}</div></div>
+        <div><div class="muted small">固定支出</div><div class="t2 dim">${money(Math.round(fixTotal))}</div></div></div>
       ${(o => o.due || o.owe ? `<button type="button" class="aa-line" data-goto="splits"><span>🧾 AA 待收 <b>${money(o.due)}</b>${o.n ? `（${o.n} 筆）` : ''}${o.owe ? `，待付 ${money(o.owe)}` : ''}</span><span class="muted">不計入支出 ›</span></button>` : '')(spOutstanding())}
       ${bud.var ? budLine(varTotal, bud.var, '可控預算') : ''}${bud.total ? budLine(total, bud.total, '總預算') : ''}
       ${S.expYm === todayStr().slice(0,7) ? projHtml(varRows, varTotal, fixTotal, bud.total, bud.var) : ''}

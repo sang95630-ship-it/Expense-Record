@@ -202,7 +202,7 @@ button:active:not(:disabled){transform:scale(.96)}
 
 /* ---- 數字、圖表 ---- */
 .total{font-size:36px;font-weight:700;letter-spacing:-.02em}
-.split2 .t2{font-size:26px;font-weight:700;letter-spacing:-.02em}
+.split2 .t2{font-size:clamp(20px,6.4vw,26px);font-weight:700;letter-spacing:-.02em;white-space:nowrap}
 .bar{height:6px;background:var(--soft);border-radius:3px}
 .bar i{border-radius:3px;transition:width .8s var(--spring)}
 .proj{background:var(--surface-2);border-radius:var(--r-field)}
