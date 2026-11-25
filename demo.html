@@ -103,7 +103,9 @@ h2{font-size:16px;margin:28px 0 10px}
 /* 項目格左右拉：容器只裁切橫向；相鄰類別（.grid-ghost）放在左右兩側，與目前的格子一起移動 */
 .grid-clip{overflow:hidden;overflow:clip;overflow-clip-margin:8px;margin:0 -6px;padding:0 6px}
 #itemGrid{position:relative;will-change:transform;touch-action:pan-y}
-.grid-ghost{position:absolute;top:0;width:100%;display:grid;grid-template-columns:inherit;gap:inherit;pointer-events:none}
+.pager-ghost{position:absolute;top:0;width:100%;pointer-events:none}
+.grid-ghost{display:grid;grid-template-columns:inherit;gap:inherit}
+#expPane{position:relative;will-change:transform;touch-action:pan-y}
 .chip{display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 4px;border:1.5px solid transparent;background:var(--surface);border-radius:14px;font-size:13px}
 .chip .em{font-size:24px;line-height:1.2}
 .chip.active{border-color:var(--primary);background:var(--surface-2);font-weight:700}
@@ -470,7 +472,6 @@ details.fold>summary h2{margin:0;font-size:19px;font-weight:700;color:var(--ink)
 .tabs::before{content:"";position:absolute;top:3px;bottom:3px;left:3px;width:calc((100% - 6px)/4);border-radius:999px;background:var(--seg-on);
   box-shadow:0 3px 8px rgba(0,0,0,.12),0 3px 1px rgba(0,0,0,.04);transform:translateX(calc(var(--si,1) * 100%));transition:transform .5s var(--spring-b)}
 .tabs.none::before{opacity:0}
-.tabs.dragging::before{transition:none}
 .tab{position:relative;z-index:1;border-radius:999px;font-size:15px;font-weight:500;color:var(--ink);padding:8px 0;transition:color .2s}
 .tab.active{background:none!important;box-shadow:none!important;font-weight:600}
 .text-in{border:0;background:var(--surface-2);border-radius:var(--r-field);padding:12px 15px;font-size:17px;transition:box-shadow .2s}
@@ -1342,7 +1343,7 @@ addEventListener('touchstart', e => {
   if (isDesktop() || e.touches.length !== 1 || document.querySelector('.overlay.show')) return;
   const t = e.touches[0];
   if (e.target.closest('input,select,textarea,.wheel,.trend svg,.combo-row')) return; // 避免與輸入及橫向操作衝突
-  if (e.target.closest('#itemGrid') && t.clientX > EDGE) return; // 項目格左右拉＝切換類別；只有由螢幕左邊緣拉出才開側欄
+  if (e.target.closest('#itemGrid,#expPane') && t.clientX > EDGE) return; // 項目格左右拉＝切換類別；只有由螢幕左邊緣拉出才開側欄
   sw = { x:t.clientX, y:t.clientY, open:sidebar.classList.contains('open'), active:false, pos:0, lx:t.clientX, lt:e.timeStamp, v:0 };
 }, { passive:true });
 addEventListener('touchmove', e => {
@@ -1472,63 +1473,64 @@ $('#cycleSeg').addEventListener('click', e => { const b = e.target.closest('[dat
 function pickSection(sec){ S.section = sec; S.item = null; S.cycle = 'M'; renderTabs(); setCur(S.section === '旅遊' ? (tripObj(S.trip)?.currency || lsGet('lastTravelCur', 'HKD')) : 'HKD'); }
 $$('.tab').forEach(b => b.addEventListener('click', () => pickSection(b.dataset.s)));
 
-/* ---------- 項目格左右拉：切換類別（旅遊 ⇄ 日常 ⇄ 固定 ⇄ 其他） ----------
-   輪播方式：開始橫向拖動時，把上一個／下一個類別的格子放在左右兩側（.grid-ghost），三者一起跟隨手指；
-   放手後按位置及速度決定，以一段連續動畫滑到相鄰類別（時間按剩餘距離及手指速度計算，150–360ms），
-   動畫完成後才換成真正內容（與預覽完全相同，所以沒有閃動）；未達門檻則彈回。
-   分段控制的滑塊同步跟隨（--si 小數）。由螢幕左邊緣（EDGE 內）開始的拉動仍然打開側欄 */
+/* ---------- 左右拉切換（輪播）：項目格切換類別、支出明細切換分頁 ----------
+   開始橫向拖動時，把上一個／下一個的內容（預覽，.pager-ghost）放在左右兩側，與目前內容一起跟隨手指；
+   放手後按位置及速度決定，以一段連續動畫滑到相鄰一頁（時間按剩餘距離及手指速度，150–360ms），
+   完成後才換成真正內容（與預覽相同，沒有閃動）；未達門檻或回撥則彈回；兩端有橡皮筋阻力。
+   先判斷方向（水平需 >1.2×垂直），垂直時交回頁面捲動。由螢幕左邊緣（EDGE 內）開始的拉動仍然打開側欄。
+   opts：root（接收觸控的容器）、sel（被拖動的元素選擇器，可每次重新產生）、count、index()、html(i)、commit(i)、ghostClass */
 const EDGE = 24, GAP = 16;
-(() => {
-  const g = $('#itemGrid'), tabs = $('.tabs'); let st = null, busy = false;
+function makePager(o){
+  let st = null, busy = false;
   const reduce = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const move = (x, ms, ease) => { g.style.transition = ms ? `transform ${ms}ms ${ease}` : 'none'; g.style.transform = x ? `translate3d(${x}px,0,0)` : ''; };
-  const thumb = (f) => tabs.style.setProperty('--si', f);
-  const ghosts = i => {
-    [-1, 1].forEach(d => { const j = i + d; if (j < 0 || j >= ORDER.length) return;
-      const el = document.createElement('div'); el.className = 'grid-ghost'; el.setAttribute('aria-hidden', 'true');
-      el.style.left = `calc(${d * 100}% + ${d * GAP}px)`; el.innerHTML = chipsHtml(ORDER[j]); g.appendChild(el); });
-  };
-  const clear = () => g.querySelectorAll('.grid-ghost').forEach(x => x.remove());
-  g.addEventListener('touchstart', e => {
-    if (busy || e.touches.length !== 1 || sidebar.classList.contains('open')) return;
+  const move = (el, x, ms, ease) => { el.style.transition = ms ? `transform ${ms}ms ${ease}` : 'none'; el.style.transform = x ? `translate3d(${x}px,0,0)` : ''; };
+  o.root.addEventListener('touchstart', e => {
+    const el = e.target.closest(o.sel);
+    if (!el || busy || e.touches.length !== 1 || sidebar.classList.contains('open')) return;
     const t = e.touches[0]; if (t.clientX <= EDGE) return;
-    st = { x:t.clientX, y:t.clientY, dir:0, dx:0, lx:t.clientX, lt:e.timeStamp, v:0, i:ORDER.indexOf(S.section) };
+    st = { el, x:t.clientX, y:t.clientY, dir:0, dx:0, lx:t.clientX, lt:e.timeStamp, v:0, i:o.index() };
   }, { passive:true });
-  g.addEventListener('touchmove', e => {
+  o.root.addEventListener('touchmove', e => {
     if (!st) return;
     const t = e.touches[0], dx = t.clientX - st.x, dy = t.clientY - st.y;
     if (!st.dir){
       if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
-      st.dir = Math.abs(dx) > Math.abs(dy) * 1.2 ? 1 : -1; // 1＝水平（切換類別），-1＝垂直（交回頁面捲動）
-      if (st.dir > 0){ ghosts(st.i); tabs.classList.add('dragging'); st.w = g.offsetWidth + GAP; }
+      st.dir = Math.abs(dx) > Math.abs(dy) * 1.2 ? 1 : -1;
+      if (st.dir > 0){
+        st.w = st.el.offsetWidth + GAP;
+        [-1, 1].forEach(d => { const j = st.i + d; if (j < 0 || j >= o.count) return;
+          const g = document.createElement('div'); g.className = 'pager-ghost ' + (o.ghostClass || ''); g.setAttribute('aria-hidden', 'true');
+          g.style.left = `calc(${d * 100}% + ${d * GAP}px)`; g.innerHTML = o.html(j); st.el.appendChild(g); });
+      }
     }
     if (st.dir < 0) return;
     e.preventDefault();
-    const edge = (dx > 0 && st.i === 0) || (dx < 0 && st.i === ORDER.length - 1);
-    st.dx = edge ? dx / (1 + Math.abs(dx) / 120) : dx; // 兩端：橡皮筋阻力（越拉越緊）
+    const edge = (dx > 0 && st.i === 0) || (dx < 0 && st.i === o.count - 1);
+    st.dx = edge ? dx / (1 + Math.abs(dx) / 120) : dx; // 兩端：橡皮筋阻力
     const dt = e.timeStamp - st.lt; if (dt > 0) st.v = st.v * .4 + (t.clientX - st.lx) / dt * .6; st.lx = t.clientX; st.lt = e.timeStamp;
-    move(st.dx, 0); thumb(st.i - st.dx / st.w);
+    move(st.el, st.dx, 0);
   }, { passive:false });
   const end = () => {
     if (!st || st.dir !== 1){ st = null; return; }
-    const { w, i, dx, v } = st; st = null;
+    const { el, w, i, dx, v } = st; st = null;
     let step = (dx < -w * .2 || v < -.35) ? 1 : (dx > w * .2 || v > .35) ? -1 : 0;
-    if (Math.sign(v) === Math.sign(dx) * -1 && Math.abs(v) > .35) step = 0; // 回撥：取消
-    const j = i + step, ok = step && j >= 0 && j < ORDER.length;
+    if (Math.sign(v) === -Math.sign(dx) && Math.abs(v) > .35) step = 0; // 回撥：取消
+    const j = i + step, ok = step && j >= 0 && j < o.count;
     const target = ok ? -step * w : 0, dist = Math.abs(target - dx);
     const ms = reduce() ? 0 : Math.round(Math.max(150, Math.min(360, Math.abs(v) > .3 ? dist / Math.abs(v) * 1.6 : 120 + dist * .6)));
-    const done = () => { busy = false; tabs.classList.remove('dragging');
-      if (ok){ move(0, 0); pickSection(ORDER[j]); } else { clear(); move(0, 0); thumb(i); } };
+    const done = () => { busy = false; move(el, 0, 0); el.querySelectorAll(':scope > .pager-ghost').forEach(g => g.remove()); if (ok) o.commit(j); };
     if (!ms){ done(); return; }
     busy = true;
     if (ok) try { navigator.vibrate?.(6); } catch(e){}
-    tabs.classList.remove('dragging'); thumb(ok ? j : i); // 滑塊以自身彈簧動畫歸位
-    move(target, ms, ok ? 'cubic-bezier(.22,.8,.25,1)' : 'cubic-bezier(.3,1.25,.5,1)');
-    let fired = false; const fin = () => { if (fired) return; fired = true; g.removeEventListener('transitionend', fin); done(); };
-    g.addEventListener('transitionend', fin); setTimeout(fin, ms + 60); // 後備：transitionend 未觸發時
+    move(el, target, ms, ok ? 'cubic-bezier(.22,.8,.25,1)' : 'cubic-bezier(.3,1.25,.5,1)');
+    let fired = false; const fin = ev => { if (fired || (ev && ev.target !== el)) return; fired = true; el.removeEventListener('transitionend', fin); done(); };
+    el.addEventListener('transitionend', fin); setTimeout(fin, ms + 60); // 後備
   };
-  g.addEventListener('touchend', end); g.addEventListener('touchcancel', end);
-})();
+  o.root.addEventListener('touchend', end); o.root.addEventListener('touchcancel', end);
+}
+// 項目格：旅遊 ⇄ 日常 ⇄ 固定 ⇄ 其他
+makePager({ root:$('#itemGrid'), sel:'#itemGrid', count:ORDER.length, index:() => ORDER.indexOf(S.section),
+  html:j => chipsHtml(ORDER[j]), commit:j => pickSection(ORDER[j]), ghostClass:'grid-ghost' });
 $('#itemGrid').addEventListener('click', e => { const c = e.target.closest('.chip'); if (!c) return; S.item = c.dataset.item; renderTabs(); $('#amount').focus(); keepSaveVisible(); });
 
 /* ---------- 鍵盤彈出時，確保「確認」按鈕不被遮住 ---------- */
@@ -1767,14 +1769,18 @@ async function renderExpense(){
     const empty = t => `<div class="card"><p class="muted small">${t}</p></div>`;
     html += `<h2>支出明細</h2><div class="seg full" role="tablist">${[['var','可控消費'],['fix','固定支出'],['all','全部']].map(([k,l]) =>
       `<button type="button" role="tab" data-etab="${k}" class="${k === tab ? 'active' : ''}" aria-selected="${k === tab}">${l}</button>`).join('')}</div>`;
-    if (tab === 'fix'){
-      const list = [...fixRows].sort((a,b) => b.date.localeCompare(a.date) || b.amount - a.amount);
-      html += list.length ? `<div class="card list">${list.map(r => recRow(r, true)).join('')}</div>
-        <div class="fx-total"><span class="muted">本月固定支出 ${list.length} 筆</span><b class="num">${money(round2(fixTotal))}</b></div>`
-        : empty('本月未有固定支出入帳。');
-    } else {
-      html += weekGroups(tab === 'all' ? rows : varRows, tab === 'all') || empty(tab === 'all' ? '此月份沒有支出紀錄。' : '此月份沒有可控消費紀錄。');
-    }
+    // 三個分頁的內容（左右拉預覽及切換用）
+    const pane = t => {
+      if (t === 'fix'){
+        const list = [...fixRows].sort((a,b) => b.date.localeCompare(a.date) || b.amount - a.amount);
+        return list.length ? `<div class="card list">${list.map(r => recRow(r, true)).join('')}</div>
+          <div class="fx-total"><span class="muted">本月固定支出 ${list.length} 筆</span><b class="num">${money(round2(fixTotal))}</b></div>`
+          : empty('本月未有固定支出入帳。');
+      }
+      return weekGroups(t === 'all' ? rows : varRows, t === 'all') || empty(t === 'all' ? '此月份沒有支出紀錄。' : '此月份沒有可控消費紀錄。');
+    };
+    S.expPane = pane;
+    html += `<div class="grid-clip"><div id="expPane">${pane(tab)}</div></div>`;
     box.innerHTML = html;
   } catch(e){ box.innerHTML = `<p class="muted">${esc(errMsg(e))}</p>`; }
 }
@@ -1792,6 +1798,13 @@ $('#expBody').addEventListener('click', e => {
 
 const FOLD_BTN = '<span class="fold-btn" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>';
 /* ---------- 支出明細：按週分組（星期日開始；跨月的週只計本月日子） ---------- */
+const ETABS = ['var','fix','all'];
+makePager({ root:$('#expBody'), sel:'#expPane', count:ETABS.length, index:() => Math.max(0, ETABS.indexOf(S.expTab)),
+  html:j => S.expPane ? S.expPane(ETABS[j]) : '',
+  commit:j => { S.expTab = ETABS[j]; lsSet('expTab', S.expTab);
+    const pn = $('#expPane'); if (pn && S.expPane) pn.innerHTML = S.expPane(S.expTab);
+    $$('#expBody [data-etab]').forEach(b => { const on = b.dataset.etab === S.expTab; b.classList.toggle('active', on); b.setAttribute('aria-selected', on); });
+    renderExpense(); } });
 S.expTab = (() => { try { return JSON.parse(localStorage.getItem('expTab')) || 'var'; } catch(e){ return 'var'; } })();
 S.wkOpen = {}; // 本次使用期間手動展開／收起的週（key = 月份|週首日）
 function weekGroups(rows, showFix){
