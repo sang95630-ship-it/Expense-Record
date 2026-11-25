@@ -80,25 +80,34 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
 .total,.split2 .t2,#amount,.sp-total{font-family:ui-rounded,"SF Pro Rounded",-apple-system,system-ui,sans-serif}
 
 /* ---- 玻璃材質（控制層） ---- */
-.tabbar,.topbar.compact,.sync-btn,.toast,.sidebar,.combo,.month-nav .ghost{
+.tabbar,.sync-btn,.toast,.sidebar,.combo,.month-nav .ghost{
   -webkit-backdrop-filter:blur(22px) saturate(190%);backdrop-filter:blur(22px) saturate(190%)}
 
-/* ---- 置頂列：頂部透明大標題；下捲縮為居中小標題，轉為玻璃 ---- */
-.topbar{background:transparent;padding:calc(10px + env(safe-area-inset-top,0px)) 16px 4px;max-width:none;transition:padding .45s var(--spring),background .3s,box-shadow .3s}
-.topbar h1{font-size:34px;font-weight:700;letter-spacing:.005em;transition:font-size .45s var(--spring)}
-.topbar.compact{background:var(--glass);box-shadow:0 .5px 0 var(--line);padding-top:calc(8px + env(safe-area-inset-top,0px));padding-bottom:8px}
-.topbar.compact h1{font-size:17px;font-weight:600;justify-content:center}
-.topbar.compact .tb-tx{display:inline} .topbar.compact .tb-ic{display:none}
-.sync-btn{width:36px;height:36px;padding:3px;background:var(--glass);border:.5px solid var(--glass-edge);box-shadow:var(--glass-shadow);transition:transform .4s var(--spring-b),width .4s var(--spring),height .4s var(--spring)}
+/* ---- 置頂列（iOS 大標題模式）----
+   大標題（#largeTitle）屬內容層，隨頁面自然向上捲走並輕微縮小淡出；置頂列中央的小標題及玻璃背景按捲動距離（--tp，0→1）連續淡入。
+   全程跟隨手指，沒有突然切換的字級或對齊，因此轉換順滑 */
+.topbar{display:grid;grid-template-columns:44px 1fr 44px;align-items:center;gap:0;background:transparent;box-shadow:none;max-width:none;
+  padding:calc(6px + env(safe-area-inset-top,0px)) 12px 6px;min-height:calc(50px + env(safe-area-inset-top,0px));isolation:isolate}
+.topbar::before{content:"";position:absolute;inset:0;z-index:-1;background:var(--glass);box-shadow:0 .5px 0 var(--line);
+  -webkit-backdrop-filter:blur(22px) saturate(190%);backdrop-filter:blur(22px) saturate(190%);opacity:var(--tp,0)}
+.topbar h1,.topbar.compact h1{grid-column:2;font-size:17px;font-weight:600;justify-content:center;text-align:center;opacity:var(--tt,0);
+  transform:translateY(calc((1 - var(--tt,0)) * 6px))}
+.topbar .tb-tx,.topbar.compact .tb-tx{display:inline} .topbar .tb-ic,.topbar.compact .tb-ic{display:none!important}
+.topbar #menuBtn{grid-column:1}
+.topbar .sync-btn{grid-column:3;justify-self:end}
+#syncState{position:absolute;right:58px;top:calc(50% + env(safe-area-inset-top,0px)/2);transform:translateY(-50%);font-size:12px}
+.large-title{font-size:34px;font-weight:700;letter-spacing:.005em;line-height:1.15;margin:0 20px 10px;max-width:720px;
+  transform-origin:left bottom;transform:scale(calc(1 - var(--tp,0) * .06));opacity:calc(1 - var(--tp,0) * 1.6)}
+.sync-btn{width:36px;height:36px;padding:3px;background:var(--glass);border:.5px solid var(--glass-edge);box-shadow:var(--glass-shadow);transition:transform .4s var(--spring-b)}
 .sync-btn svg circle{fill:transparent} .sync-btn .ar{stroke:var(--primary);stroke-width:40} .sync-btn .ah{fill:var(--primary)}
 .sync-btn:active{transform:scale(.88)}
-.topbar.compact .sync-btn{width:30px;height:30px}
 #syncState{font-size:13px}
 .page{padding:4px 16px calc(112px + env(safe-area-inset-bottom,0px));max-width:720px;margin:0 auto}
-@media (min-width:900px){ .topbar{padding-left:28px} .page{margin:0;padding-left:28px;padding-bottom:48px} }
+@media (min-width:900px){ .topbar{padding-left:28px} .page{margin:0;padding-left:28px;padding-bottom:48px} .large-title{margin-left:32px} }
 
 /* ---- 頁面切換：淡入上移；子區塊依次出現 ---- */
 .page:not([hidden]){animation:pageIn .5s var(--ease-out) backwards}
+.large-title.swap{animation:riseIn .5s var(--ease-out) backwards}
 .page:not([hidden])>*{animation:riseIn .55s var(--ease-out) backwards}
 .page:not([hidden])>*:nth-child(2){animation-delay:.03s} .page:not([hidden])>*:nth-child(3){animation-delay:.06s}
 .page:not([hidden])>*:nth-child(4){animation-delay:.09s} .page:not([hidden])>*:nth-child(n+5){animation-delay:.12s}
@@ -269,6 +278,7 @@ tabs = '<span class="tb-lens" aria-hidden="true"></span>' + ''.join(
     f'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{ICON[k]}</svg>'
     f'<span>{LABEL[k]}</span>{BADGE if k == "more" else ""}</button>'
     for k in ['input', 'expense', 'analysis', 'splits', 'more'])
+sub('    </header>\n', '    </header>\n    <div class="large-title" id="largeTitle" aria-hidden="true">新增支出</div>\n')
 sub('  </main>\n', f'  </main>\n  <nav class="tabbar" id="tabbar" aria-label="主要頁面">{tabs}</nav>\n')
 
 JS = r"""
@@ -283,7 +293,16 @@ JS = r"""
     bar.querySelectorAll('.tb-item').forEach(b => b.classList.toggle('active', b.dataset.tb === cur));
     bar.style.setProperty('--ti', MAIN.indexOf(cur));
   };
-  const _go = go; go = function(p){ _go(p); mark(); bar.classList.remove('mini'); };
+  // 大標題：按捲動距離連續計算 --tp（大標題縮小淡出、玻璃背景淡入）及 --tt（小標題淡入），每格畫面更新一次
+  const top = document.querySelector('.topbar'), lt = document.getElementById('largeTitle');
+  let tick = false;
+  const titleScroll = () => { tick = false; const y = Math.max(0, scrollY);
+    top.style.setProperty('--tp', Math.min(1, y / 44).toFixed(3));
+    top.style.setProperty('--tt', Math.min(1, Math.max(0, (y - 30) / 20)).toFixed(3));
+    lt.style.setProperty('--tp', Math.min(1, y / 44).toFixed(3)); };
+  addEventListener('scroll', () => { if (!tick){ tick = true; requestAnimationFrame(titleScroll); } }, { passive:true });
+  const _go = go; go = function(p){ _go(p); mark(); bar.classList.remove('mini'); lt.textContent = TITLES[p] || '';
+    lt.classList.remove('swap'); void lt.offsetWidth; lt.classList.add('swap'); titleScroll(); };
   bar.addEventListener('click', e => {
     const b = e.target.closest('[data-tb]'); if (!b) return;
     haptic(); b.classList.remove('bump'); void b.offsetWidth; b.classList.add('bump');
@@ -311,7 +330,7 @@ JS = r"""
   const tint = () => row.querySelectorAll('.tint-dot').forEach(b => b.classList.toggle('on', b.dataset.tint === (document.documentElement.dataset.tint || 'steel')));
   row.addEventListener('click', e => { const b = e.target.closest('[data-tint]'); if (!b) return;
     document.documentElement.dataset.tint = b.dataset.tint; try { localStorage.setItem('uiTint', b.dataset.tint); } catch(e){} tint(); });
-  tint(); mark();
+  tint(); mark(); lt.textContent = TITLES[S.page] || ''; titleScroll();
 })();
 </script>
 """
