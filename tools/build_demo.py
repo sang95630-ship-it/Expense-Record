@@ -8,8 +8,11 @@
 """
 from pathlib import Path
 
+import sys
+
 ROOT = Path(__file__).resolve().parent.parent
-src = (ROOT / 'index.html').read_text(encoding='utf-8')
+SRC, OUT = (sys.argv[1:3] + ['index.html', 'demo.html'][len(sys.argv[1:3]):])  # 可選：來源及輸出，例如 next.html next-demo.html
+src = (ROOT / SRC).read_text(encoding='utf-8')
 mock = (ROOT / 'tools' / 'demo-mock.js').read_text(encoding='utf-8')
 
 
@@ -29,7 +32,7 @@ s = sub(s, "if ('serviceWorker' in navigator && (location.protocol === 'https:' 
 # 體驗版樣式：隱藏「Details（開啟 Google Sheet）」、連結表單、首次設定步驟、同步狀態
 demo_css = """
 /* ---- 體驗版 ---- */
-.nav-item[data-page="details"],#cfgForm,#p-settings>h2:has(+ .steps),#p-settings .steps,#p-settings>h2:has(+ #healthBox),#healthBox{display:none!important}
+.nav-item[data-page="details"],#uiSwitch,#cfgForm,#p-settings>h2:has(+ .steps),#p-settings .steps,#p-settings>h2:has(+ #healthBox),#healthBox{display:none!important}
 .demo-banner{display:flex;gap:10px;align-items:flex-start;background:var(--warn-bg);color:var(--warn-ink);border-radius:14px;padding:10px 14px;margin:0 0 12px;font-size:13.5px;line-height:1.55}
 .demo-banner b{display:block;font-size:14px}
 """
@@ -45,5 +48,5 @@ s = sub(s, "const SPLIT_PEOPLE_DEF = [];", "const SPLIT_PEOPLE_DEF = ['阿明', 
 # 模擬伺服器須在主程式之前載入
 s = sub(s, '<script>\nconst DEFAULT_SECTIONS', '<script>\n' + mock + '\n</script>\n<script>\nconst DEFAULT_SECTIONS')
 
-(ROOT / 'demo.html').write_text(s, encoding='utf-8')
-print(f'已產生 demo.html（{len(s.encode("utf-8")) // 1024} KB）')
+(ROOT / OUT).write_text(s, encoding='utf-8')
+print(f'已產生 {OUT}（{len(s.encode("utf-8")) // 1024} KB）')

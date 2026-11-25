@@ -73,6 +73,12 @@
 | + | 主畫面長按捷徑（manifest `shortcuts`）：記早餐／午餐／晚餐（`?s=日常&i=…`，直接聚焦金額）、待確認（`?p=inbox`）；圖示 `sc-*.png`；`sw.js` VERSION 升至 v2 | ✅ |
 | + | PWA：`manifest.json` + `sw.js`（index.html 網絡優先、其他靜態檔快取優先、Google Fonts SWR；GAS／匯率 API 不快取）；圖示 `icon.svg`／`icon-192/512.png`／`icon-maskable-512.png`／`apple-touch-icon.png` | ✅ |
 
+## 新設計（next.html，試用中）
+- 參考 Apple Human Interface Guidelines：系統字體、大標題（下捲縮為居中小標題，毛玻璃）、分組列表、iOS 分段控制、圓角圖示格、膠囊提示、表單頁拉柄；手機以底部分頁列（記帳／概覽／分析／分帳／更多）導覽，「更多」打開側欄；電腦為淺色側欄
+- `python3 tools/build_next.py` 由 index.html 產生 `next.html`：只覆蓋 CSS 及加入分頁列，功能、資料、localStorage 完全共用；**修改 index.html 後須重新執行並一併 commit**
+- 經典版設定頁頂部「✨ 試用新設計」連到 next.html；新設計同一位置為「↩︎ 返回經典版」
+- 體驗版：`python3 tools/build_demo.py next.html next-demo.html`
+
 ## 體驗版（demo.html）
 - 供分享給他人一次性體驗的單一 HTML：`python3 tools/build_demo.py` 由 index.html 產生 `demo.html`，**修改 index.html 後須重新執行並一併 commit**
 - `tools/demo-mock.js`：頁內模擬伺服器（攔截 fetch，實作所有 GET／POST action）＋虛構示範數據（近 6 個月紀錄、5 個固定項目、東京旅程、2 筆待確認）；匯率用固定值
