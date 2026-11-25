@@ -1010,6 +1010,32 @@ function holdPageHeight(){
   pg.style.minHeight = pg.offsetHeight + 'px';
 }
 function releasePage(){ clearTimeout(holdRelT); if (holdPg){ holdPg.style.minHeight = ''; holdPg.getAnimations?.().forEach(a => a.cancel()); holdPg = null; } }
+// 以內容底部量度頁面實際高度（不可先移除 min-height 再量，否則瀏覽器會即時截短捲動位置而跳動）
+function pageNat(pg){
+  const last = pg.lastElementChild, cs = getComputedStyle(pg);
+  return last ? Math.ceil(last.getBoundingClientRect().bottom + parseFloat(getComputedStyle(last).marginBottom) - pg.getBoundingClientRect().top + parseFloat(cs.paddingBottom) + parseFloat(cs.borderBottomWidth)) : 0;
+}
+/* 切換分頁（左右拉或按分段按鈕）後的落點：頁面高度已被撐住，內容已換成新分頁。
+   · 若原本已捲過分段按鈕，平滑捲到分段按鈕位於置頂列下方（新分頁由開頭顯示）
+   · 落點不超過新分頁的最大可捲範圍；到位後才解除撐住的高度 → 全程只有一段單向、平滑的移動，不會先跳後回 */
+function settleSwap(segSel, paneSel, h0){
+  const pg = holdPg, pane = $(paneSel), seg = $(segSel);
+  if (!pg){ animHeight(pane, h0); return; }
+  const nat = pageNat(pg), extra = document.documentElement.scrollHeight - pg.offsetHeight; // 頁面以外的高度（置頂列等）
+  const maxS = Math.max(0, nat + extra - innerHeight), tb = ($('.topbar')?.offsetHeight || 0) + 8;
+  let want = scrollY;
+  if (seg){ const r = seg.getBoundingClientRect(); if (r.top < tb) want = scrollY + r.top - tb; }
+  const target = Math.round(Math.min(Math.max(0, want), maxS));
+  animHeight(pane, h0);
+  const done = () => { if (holdPg === pg){ pg.style.minHeight = ''; holdPg = null; } };
+  if (Math.abs(target - scrollY) < 2) return void setTimeout(done, 400);
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches){ scrollTo(0, target); return done(); }
+  const dist = target - scrollY;
+  if (Math.abs(dist) > innerHeight * .6) scrollTo({ top:target - Math.sign(dist) * 90, behavior:'instant' });
+  scrollTo({ top:target, behavior:'smooth' });
+  let fin = false; const end = () => { if (fin) return; fin = true; removeEventListener('scrollend', end); setTimeout(done, 30); };
+  addEventListener('scrollend', end); setTimeout(end, 900); // scrollend 不支援時的後備
+}
 // 動畫完成後，頁底空白約 1 秒內慢慢收回（min-height 由撐住的高度過渡至實際高度；畫面會緩緩向下移，而非突然跳動）
 let holdRelT;
 function easeRelease(delay = 80){
@@ -1017,8 +1043,7 @@ function easeRelease(delay = 80){
   holdRelT = setTimeout(() => {
     const pg = holdPg; if (!pg) return; holdPg = null;
     // 以內容底部量度實際高度（不可先移除 min-height 再量，否則瀏覽器會即時截短捲動位置而跳動）
-    const held = parseFloat(pg.style.minHeight) || 0, last = pg.lastElementChild, cs = getComputedStyle(pg);
-    const nat = last ? Math.ceil(last.getBoundingClientRect().bottom + parseFloat(getComputedStyle(last).marginBottom) - pg.getBoundingClientRect().top + parseFloat(cs.paddingBottom) + parseFloat(cs.borderBottomWidth)) : 0;
+    const held = parseFloat(pg.style.minHeight) || 0, nat = pageNat(pg);
     if (held > nat + 1 && !matchMedia('(prefers-reduced-motion: reduce)').matches){
       const a = pg.animate({ minHeight:[held + 'px', nat + 'px'] }, { duration:1000, easing:'cubic-bezier(.4,0,.2,1)' });
       pg.style.minHeight = nat + 'px'; a.onfinish = () => { pg.style.minHeight = ''; };
@@ -1163,9 +1188,12 @@ function makePager(o){
       if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
       st.dir = Math.abs(dx) > Math.abs(dy) * 1.2 ? 1 : -1;
       if (st.dir > 0){
+        if (o.hold) holdPageHeight();
         st.w = st.el.offsetWidth + GAP;
+        const tbH = ($('.topbar')?.offsetHeight || 0) + 8, off = o.hold ? Math.max(0, Math.round(tbH - st.el.getBoundingClientRect().top)) : 0;
+        st.off = off;
         [-1, 1].forEach(d => { const j = st.i + d; if (j < 0 || j >= o.count) return;
-          const g = document.createElement('div'); g.className = 'pager-ghost ' + (o.ghostClass || ''); g.setAttribute('aria-hidden', 'true');
+          const g = document.createElement('div'); g.className = 'pager-ghost ' + (o.ghostClass || ''); g.setAttribute('aria-hidden', 'true'); if (off) g.style.top = off + 'px';
           g.style.left = `calc(${d * 100}% + ${d * GAP}px)`; g.innerHTML = o.html(j); st.el.appendChild(g); st['h' + d] = g.offsetHeight; });
         st.h0 = st.el.offsetHeight; // 目前一頁的高度；拖動時按比例過渡至相鄰一頁的高度
       }
@@ -1175,18 +1203,18 @@ function makePager(o){
     const edge = (dx > 0 && st.i === 0) || (dx < 0 && st.i === o.count - 1);
     st.dx = edge ? dx / (1 + Math.abs(dx) / 120) : dx; // 兩端：橡皮筋阻力
     const dt = e.timeStamp - st.lt; if (dt > 0) st.v = st.v * .4 + (t.clientX - st.lx) / dt * .6; st.lx = t.clientX; st.lt = e.timeStamp;
-    const nh = st['h' + (st.dx < 0 ? 1 : -1)], f = Math.min(1, Math.abs(st.dx) / st.w);
+    const nh = st.off ? 0 : st['h' + (st.dx < 0 ? 1 : -1)], f = Math.min(1, Math.abs(st.dx) / st.w);
     move(st.el, st.dx, 0, '', nh ? Math.round(st.h0 + (nh - st.h0) * f) : st.h0);
   }, { passive:false });
   const end = () => {
     if (!st || st.dir !== 1){ st = null; return; }
-    const { el, w, i, dx, v, h0 } = st, hT = st['h' + (dx < 0 ? 1 : -1)]; st = null;
+    const { el, w, i, dx, v, h0 } = st, hT = st.off ? 0 : st['h' + (dx < 0 ? 1 : -1)]; st = null;
     let step = (dx < -w * .2 || v < -.35) ? 1 : (dx > w * .2 || v > .35) ? -1 : 0;
     if (Math.sign(v) === -Math.sign(dx) && Math.abs(v) > .35) step = 0; // 回撥：取消
     const j = i + step, ok = step && j >= 0 && j < o.count;
     const target = ok ? -step * w : 0, dist = Math.abs(target - dx);
     const ms = reduce() ? 0 : Math.round(Math.max(150, Math.min(360, Math.abs(v) > .3 ? dist / Math.abs(v) * 1.6 : 120 + dist * .6)));
-    const done = () => { busy = false; move(el, 0, 0, '', 0); el.querySelectorAll(':scope > .pager-ghost').forEach(g => g.remove()); if (ok) o.commit(j); };
+    const done = () => { busy = false; move(el, 0, 0, '', 0); el.querySelectorAll(':scope > .pager-ghost').forEach(g => g.remove()); if (ok) o.commit(j); else if (o.hold) releasePage(); };
     if (!ms){ done(); return; }
     busy = true;
     if (ok) try { navigator.vibrate?.(6); } catch(e){}
@@ -1459,7 +1487,7 @@ $('#expBody').addEventListener('toggle', e => {
 $('#expBody').addEventListener('click', e => { if (e.target.closest('[data-goto="splits"]')) return go('splits'); });
 $('#expBody').addEventListener('click', e => {
   const ed = e.target.closest('[data-edit]'), fx = e.target.closest('[data-fx]'), et = e.target.closest('[data-etab]');
-  if (et){ holdPageHeight(); const h0 = $('#expPane')?.offsetHeight; S.expTab = et.dataset.etab; lsSet('expTab', S.expTab); return renderExpense().then(() => { animHeight($('#expPane'), h0); easeRelease(420); }); }
+  if (et){ holdPageHeight(); const h0 = $('#expPane')?.offsetHeight; S.expTab = et.dataset.etab; lsSet('expTab', S.expTab); return renderExpense().then(() => settleSwap('#expBody .seg.full', '#expPane', h0)); }
   if (ed) openRec(ed.dataset.edit);
   if (fx) openFixed(fx.dataset.fx);
 });
@@ -1467,19 +1495,19 @@ $('#expBody').addEventListener('click', e => {
 const FOLD_BTN = '<span class="fold-btn" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>';
 /* ---------- 支出明細：按週分組（星期日開始；跨月的週只計本月日子） ---------- */
 const ANMODES = ['section','item'];
-makePager({ root:$('#anBody'), sel:'#anPane', count:ANMODES.length, index:() => Math.max(0, ANMODES.indexOf(S.anMode)),
+makePager({ hold:true, root:$('#anBody'), sel:'#anPane', count:ANMODES.length, index:() => Math.max(0, ANMODES.indexOf(S.anMode)),
   html:j => S.anPane ? S.anPane(ANMODES[j]) : '',
   commit:j => { holdPageHeight(); S.anMode = ANMODES[j];
     const pn = $('#anPane'); if (pn && S.anPane) pn.innerHTML = S.anPane(S.anMode);
     $$('#anBody [data-mode]').forEach(b => b.classList.toggle('active', b.dataset.mode === S.anMode));
-    const h0 = pn?.offsetHeight; renderAnalysis().then(() => { animHeight($('#anPane'), h0); easeRelease(420); }); } });
+    settleSwap('#anBody .seg', '#anPane', 0); renderAnalysis(); } }); // 內容已即時換上：立即定位（不等重畫，避免一兩格空白）
 const ETABS = ['var','fix','all'];
-makePager({ root:$('#expBody'), sel:'#expPane', count:ETABS.length, index:() => Math.max(0, ETABS.indexOf(S.expTab)),
+makePager({ hold:true, root:$('#expBody'), sel:'#expPane', count:ETABS.length, index:() => Math.max(0, ETABS.indexOf(S.expTab)),
   html:j => S.expPane ? S.expPane(ETABS[j]) : '',
   commit:j => { holdPageHeight(); S.expTab = ETABS[j]; lsSet('expTab', S.expTab);
     const pn = $('#expPane'); if (pn && S.expPane) pn.innerHTML = S.expPane(S.expTab);
     $$('#expBody [data-etab]').forEach(b => { const on = b.dataset.etab === S.expTab; b.classList.toggle('active', on); b.setAttribute('aria-selected', on); });
-    const h0 = pn?.offsetHeight; renderExpense().then(() => { animHeight($('#expPane'), h0); easeRelease(420); }); } });
+    settleSwap('#expBody .seg.full', '#expPane', 0); renderExpense(); } }); // 內容已即時換上：立即定位（不等重畫，避免一兩格空白）
 S.expTab = (() => { try { return JSON.parse(localStorage.getItem('expTab')) || 'var'; } catch(e){ return 'var'; } })();
 S.wkOpen = {}; // 本次使用期間手動展開／收起的週（key = 月份|週首日）
 function weekGroups(rows, showFix){
@@ -1769,7 +1797,7 @@ function trendHtml(summ){
 }
 $('#anBody').addEventListener('click', e => {
   const b = e.target.closest('[data-mode]'), tn = e.target.closest('[data-tn]'), bar = e.target.closest('[data-ym]');
-  if (b){ holdPageHeight(); const h0 = $('#anPane')?.offsetHeight; S.anMode = b.dataset.mode; renderAnalysis().then(() => { animHeight($('#anPane'), h0); easeRelease(420); }); }
+  if (b){ holdPageHeight(); const h0 = $('#anPane')?.offsetHeight; S.anMode = b.dataset.mode; renderAnalysis().then(() => settleSwap('#anBody .seg', '#anPane', h0)); }
   if (tn){ S.trendN = Number(tn.dataset.tn); renderAnalysis(); }
   if (bar && bar.dataset.ym !== S.anYm){ S.anYm = bar.dataset.ym; renderAnalysis(); scrollTo({top:0, behavior:'smooth'}); }
 });
