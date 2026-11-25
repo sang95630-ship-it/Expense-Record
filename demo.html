@@ -11,6 +11,7 @@
 <meta name="apple-mobile-web-app-title" content="記帳簿">
 <title>記帳簿（體驗版）</title>
 <script>try{document.documentElement.dataset.tint=localStorage.getItem("uiTint")||"steel"}catch(e){}</script>
+<script>try{var t=localStorage.getItem("uiTheme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
@@ -26,6 +27,12 @@
     --primary:#90A4AE;--primary-ink:#151C20;--soft:#2C3A41;--side:#10161A;--side-ink:#CFD8DC;--danger:#E08A80;--warn-bg:#5A3A12;--warn-ink:#FFCC80;--st-ok:#6CC38E;--st-warn:#F0A73A;--hl-mid:#F4C27A;
     color-scheme:dark;
   }
+}
+/* 手動選擇深色（設定頁外觀按鈕，localStorage uiTheme） */
+:root[data-theme="dark"]{
+    --bg:#151C20;--surface:#1E272C;--surface-2:#263238;--ink:#ECEFF1;--muted:#90A4AE;--line:#31414A;
+    --primary:#90A4AE;--primary-ink:#151C20;--soft:#2C3A41;--side:#10161A;--side-ink:#CFD8DC;--danger:#E08A80;--warn-bg:#5A3A12;--warn-ink:#FFCC80;--st-ok:#6CC38E;--st-warn:#F0A73A;--hl-mid:#F4C27A;
+    color-scheme:dark;
 }
 *{box-sizing:border-box}
 html,body{margin:0;min-height:100%}
@@ -179,6 +186,29 @@ h2{font-size:16px;margin:28px 0 10px}
 .st-warn-t{color:var(--st-warn)} .st-ok-t{color:var(--st-ok)}
 .bud-grid{display:grid;grid-template-columns:auto 1fr;gap:8px 12px;align-items:center;margin-bottom:12px;font-size:14px}
 .bud-grid .text-in{padding:9px 12px;text-align:right}
+/* 每月預算卡：大數字（可直接輸入）＋滑桿；滑桿上的標記為近 3 個月平均實際消費 */
+.bud-card{text-align:center;padding:14px 4px 16px;border-bottom:1px solid var(--line)}
+.bud-card:last-child{border-bottom:0}
+.bud-lbl{font-size:12px;letter-spacing:.08em;color:var(--muted);font-weight:600}
+.bud-lbl small{display:block;letter-spacing:0;font-weight:400}
+.bud-amt{display:flex;justify-content:center;align-items:baseline;gap:6px;margin:4px 0 10px}
+.bud-amt .cur{font-size:16px;color:var(--muted);font-weight:600}
+.bud-num{width:4ch;min-width:3ch;border:0;background:none;outline:none;text-align:center;font-size:34px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;padding:0;border-bottom:2px solid transparent}
+.bud-num:focus{border-bottom-color:var(--primary)}
+.bud-num::placeholder{color:var(--muted);font-size:24px;font-weight:600}
+.bud-amt .per{font-size:15px;color:var(--muted)}
+.bud-card.sm .bud-num{font-size:24px}
+.bud-track{position:relative;margin:0 6px}
+.bud-range{-webkit-appearance:none;appearance:none;width:100%;height:6px;border-radius:3px;outline:none;margin:10px 0;
+  background:linear-gradient(to right,var(--primary) var(--p,0%),var(--soft) var(--p,0%))}
+.bud-range::-webkit-slider-thumb{-webkit-appearance:none;width:26px;height:26px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.3),0 0 0 .5px rgba(0,0,0,.1);cursor:pointer}
+.bud-range::-moz-range-thumb{width:26px;height:26px;border:0;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.3)}
+.bud-avg{position:absolute;top:50%;width:3px;height:14px;margin:-7px 0 0 -1.5px;border-radius:2px;background:var(--st-warn);pointer-events:none}
+.bud-meta{display:flex;justify-content:center;gap:12px;align-items:center;font-size:13px;color:var(--muted);flex-wrap:wrap}
+.bud-meta .avg-t b{color:var(--ink);font-variant-numeric:tabular-nums}
+.bud-meta .link-btn{padding:2px 4px;font-size:13px;color:var(--primary);font-weight:600}
+details.bud-more{margin-top:4px}
+details.bud-more>summary{padding:8px 0;text-align:center}
 .trend svg{width:100%;height:auto;display:block;overflow:visible}
 .trend .tl{font-size:10px;fill:var(--muted)} .trend .tl.sel{fill:var(--ink);font-weight:700}
 .trend .grid-l{stroke:var(--line);stroke-width:1} .trend .avg{stroke:var(--ink);stroke-width:1.5;stroke-dasharray:4 3;opacity:.7}
@@ -322,6 +352,40 @@ select.text-in{appearance:auto;padding:10px 12px}
 .ui-switch b{display:block;font-weight:600}
 .ui-switch small{color:var(--muted);font-size:13px}
 .ui-switch>span:last-child{margin-left:auto;color:var(--muted);font-size:20px}
+.ui-row{display:flex;gap:10px;align-items:stretch;margin:0 0 14px}
+.ui-row .ui-switch{flex:1;margin:0;min-width:0}
+.theme-btn{flex:0 0 76px;border:0;border-radius:18px;background:var(--surface);color:var(--ink);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:12px}
+.theme-btn svg{width:24px;height:24px}
+/* 搜尋：篩選標籤（不同種類＝且，同種類＝或） */
+.sr-field{display:flex;flex-wrap:wrap;gap:6px;align-items:center;background:var(--surface-2);border-radius:12px;padding:6px 8px;min-height:46px}
+.sr-field:focus-within{box-shadow:0 0 0 2px var(--primary)}
+.sr-chips{display:contents}
+.sr-in{flex:1;min-width:110px;border:0;background:none;outline:none;font-size:16px;padding:6px 4px;color:var(--ink)}
+.sr-in::-webkit-search-cancel-button{display:none}
+.sr-chip{display:inline-flex;align-items:center;gap:3px;border-radius:999px;padding:4px 4px 4px 10px;font-size:14px;font-weight:600;white-space:nowrap;
+  background:color-mix(in srgb,var(--c,var(--primary)) 16%,transparent);color:color-mix(in srgb,var(--c,var(--primary)) 75%,var(--ink))}
+.sr-chip button{border:0;background:none;color:inherit;opacity:.55;font-size:16px;padding:0 6px;line-height:1}
+.sr-sugg{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.sr-sugg:empty{display:none}
+.sr-s{border:0;border-radius:999px;padding:6px 12px;font-size:13px;background:var(--surface-2);color:var(--ink)}
+.sr-s small{color:var(--muted);margin-left:4px}
+.sr-s.raw{background:var(--primary);color:var(--primary-ink)}
+.sr-sum{display:grid;grid-template-columns:repeat(3,1fr);text-align:center;gap:6px}
+.sr-sum>div+div{border-left:1px solid var(--line)}
+.sr-sum .lbl{font-size:11px;letter-spacing:.08em;color:var(--muted);font-weight:600}
+.sr-sum .v{font-size:clamp(15px,4.6vw,20px);white-space:nowrap;font-weight:700;font-variant-numeric:tabular-nums;margin-top:2px}
+.sr-sum .v.neg{color:var(--st-warn)}
+.sr-last{text-align:center;font-size:12px;color:var(--muted);margin-top:8px}
+.sr-day{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);padding:14px 0 4px;font-weight:600;letter-spacing:.04em}
+.sr-day:first-child{padding-top:4px}
+.sr-row{display:flex;align-items:center;gap:8px;width:100%;border:0;background:none;padding:10px 0;border-bottom:1px solid var(--line);text-align:left;color:var(--ink);cursor:pointer}
+.sr-row .t{flex:1;min-width:0;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sr-row .tags{display:flex;gap:4px;flex-shrink:0}
+.tag{font-size:11px;font-weight:700;letter-spacing:.04em;border-radius:999px;padding:3px 8px;border:0;white-space:nowrap;
+  background:color-mix(in srgb,var(--c,var(--muted)) 15%,transparent);color:color-mix(in srgb,var(--c,var(--muted)) 80%,var(--ink))}
+.sr-row .amt{font-weight:600;white-space:nowrap;text-align:right;font-variant-numeric:tabular-nums;min-width:74px}
+.sr-row .amt small{display:block;font-weight:400;font-size:11px;color:var(--muted)}
+@media (max-width:370px){ .sr-row .tags .tag.it{display:none} }
 .steps{padding-left:20px;margin:8px 0 0;color:var(--muted);font-size:14px}
 .steps li{margin:4px 0}
 .health{display:grid;grid-template-columns:auto 1fr;gap:8px 16px;font-size:14px}
@@ -494,7 +558,11 @@ button:active:not(:disabled){transform:scale(.96)}
 .rm-chip{border:0;background:var(--surface-2);font-size:14px;padding:6px 13px}
 .sp-chip{border:0;background:var(--surface-2);font-size:15px}
 .sp-chip.on{background:var(--primary);color:var(--primary-ink)}
-.ui-switch,.tint-card{border-radius:var(--r-card)}
+.ui-switch,.tint-card,.theme-btn{border-radius:var(--r-card)}
+.theme-btn{color:var(--primary);font-weight:600}
+.bud-card{border-bottom:.5px solid var(--line)}
+.bud-num,.sr-sum .v{font-family:ui-rounded,"SF Pro Rounded",-apple-system,system-ui,sans-serif}
+.sr-field{border-radius:var(--r-field)}
 .it-row button,.rule button{border:0;background:var(--surface-2);border-radius:12px}
 .it-row button.x,.rule button{color:var(--danger)}
 
@@ -590,6 +658,18 @@ button:active:not(:disabled){transform:scale(.96)}
 
 /* ---- 減少動態效果 ---- */
 @media (prefers-reduced-motion: reduce){ *,*::before,*::after{animation:none!important;transition:none!important} }
+  :root[data-theme="dark"]{
+    --bg:#000000;--surface:#1C1C1E;--surface-2:rgba(118,118,128,.24);--ink:#F2F2F7;--muted:rgba(235,235,245,.6);--line:rgba(84,84,88,.5);
+    --primary:#6AB4E0;--primary-ink:#00131F;--soft:rgba(118,118,128,.24);--side:#1C1C1E;--side-ink:#F2F2F7;
+    --danger:#FF453A;--warn-bg:rgba(255,159,10,.18);--warn-ink:#FFB340;--st-ok:#30D158;--st-warn:#FF9F0A;--hl-mid:#FFC266;
+    --seg-on:#636366;--hud:rgba(58,58,60,.82);
+    --glass:rgba(44,44,48,.55);--glass-edge:rgba(255,255,255,.14);--glass-shadow:0 10px 30px rgba(0,0,0,.5);
+  }
+  :root[data-theme="dark"][data-tint="blue"]{--primary:#0A84FF;--primary-ink:#fff}
+  :root[data-theme="dark"][data-tint="indigo"]{--primary:#7D7AFF;--primary-ink:#fff}
+  :root[data-theme="dark"][data-tint="teal"]{--primary:#40C8E0;--primary-ink:#001A20}
+  :root[data-theme="dark"][data-tint="pink"]{--primary:#FF6482;--primary-ink:#2A0009}
+  :root[data-theme="dark"][data-tint="graphite"]{--primary:#AEAEB2;--primary-ink:#000}
 
 /* ---- 體驗版 ---- */
 .nav-item[data-page="details"],#uiSwitch,#cfgForm,#p-settings>h2:has(+ .steps),#p-settings .steps,#p-settings>h2:has(+ #healthBox),#healthBox{display:none!important}
@@ -711,8 +791,9 @@ button:active:not(:disabled){transform:scale(.96)}
     <!-- Search -->
     <section class="page" id="p-search" hidden>
       <div class="card">
-        <input class="text-in" id="srQ" type="search" placeholder="搜尋備註、項目或類別，例如 壽司郎" autocomplete="off" enterkeyhint="search">
-        <div class="seg" id="srRange" style="margin-top:10px">
+        <div class="sr-field" id="srField"><span class="sr-chips" id="srChips"></span><input class="sr-in" id="srQ" type="search" placeholder="輸入類別、項目、店名…" autocomplete="off" enterkeyhint="search" aria-label="搜尋"></div>
+        <div class="sr-sugg" id="srSugg"></div>
+        <div class="seg" id="srRange" style="margin-top:12px">
           <button type="button" data-r="3">近 3 個月</button><button type="button" data-r="12">近 12 個月</button><button type="button" data-r="0">全部</button>
         </div>
       </div>
@@ -721,7 +802,7 @@ button:active:not(:disabled){transform:scale(.96)}
 
     <!-- Settings -->
     <section class="page" id="p-settings" hidden>
-      <a class="ui-switch" id="uiSwitch" href="classic.html"><span>↩︎</span><span><b>改用經典版</b><small>後備版本，資料共用，可隨時切換回來</small></span><span>›</span></a>
+      <div class="ui-row"><a class="ui-switch" id="uiSwitch" href="classic.html"><span>↩︎</span><span><b>改用經典版</b><small>後備版本，資料共用，可隨時切換回來</small></span><span>›</span></a><button type="button" class="theme-btn" id="themeBtn"></button></div>
       <div class="card tint-card" id="tintCard"><div class="tint-h">強調色</div><div class="tint-row" id="tintRow"><button type="button" class="tint-dot" data-tint="steel" style="--c:#2F6F94" aria-label="鋼藍"><i></i><span>鋼藍</span></button><button type="button" class="tint-dot" data-tint="blue" style="--c:#007AFF" aria-label="藍"><i></i><span>藍</span></button><button type="button" class="tint-dot" data-tint="indigo" style="--c:#5856D6" aria-label="靛"><i></i><span>靛</span></button><button type="button" class="tint-dot" data-tint="teal" style="--c:#1A8CA6" aria-label="青"><i></i><span>青</span></button><button type="button" class="tint-dot" data-tint="pink" style="--c:#D3264F" aria-label="粉紅"><i></i><span>粉紅</span></button><button type="button" class="tint-dot" data-tint="graphite" style="--c:#5B5B60" aria-label="石墨"><i></i><span>石墨</span></button></div></div>
       <form class="card" id="cfgForm" autocomplete="off" onsubmit="return false">
         <label class="field">Apps Script Web App 連結
@@ -752,7 +833,7 @@ button:active:not(:disabled){transform:scale(.96)}
       </div>
       <h2>每月預算</h2>
       <div class="card">
-        <div class="bud-grid" id="budBox"></div>
+        <div id="budBox"></div>
         <button class="primary" id="budSave" type="button">儲存預算</button>
         <p class="hint small" style="margin-top:8px">留空即不設預算。用量達 80% 及 100% 時，看門狗會經 Signal 提醒（09:00–22:00，每月各一次）。</p>
       </div>
@@ -940,7 +1021,7 @@ button:active:not(:disabled){transform:scale(.96)}
   const get = p => {
     switch (p.action) {
       case 'splits': return { rows: SPLITS };
-      case 'info': return { sheetUrl: '', version: 9, lastBackup: new Date(Date.now() - 2 * 864e5).toISOString(), serverTime: new Date().toISOString(), signal: false, lastWatchdog: new Date(Date.now() - 20 * 60000).toISOString(), notifyQueue: 0 };
+      case 'info': return { sheetUrl: '', version: 10, lastBackup: new Date(Date.now() - 2 * 864e5).toISOString(), serverTime: new Date().toISOString(), signal: false, lastWatchdog: new Date(Date.now() - 20 * 60000).toISOString(), notifyQueue: 0 };
       case 'list': return { rows: R.filter(r => r.date.slice(0, 7) === p.month) };
       case 'fixed': return { rows: FIXED };
       case 'items': return { items: ITEMS };
@@ -952,8 +1033,13 @@ button:active:not(:disabled){transform:scale(.96)}
       }
       case 'search': {
         const q = String(p.q || '').toLowerCase(), from = p.from || '0000-00';
-        const hit = R.filter(r => r.date.slice(0, 7) >= from && [r.section, r.item, r.remark].some(x => String(x).toLowerCase().includes(q))).sort((a, b) => b.date.localeCompare(a.date));
-        return { rows: hit.slice(0, 300), count: hit.length, total: hit.reduce((a, r) => a + r.amount, 0) };
+        let f = []; try { f = JSON.parse(p.f || '[]'); } catch (e) {}
+        const by = t => f.filter(x => x.t === t).map(x => x.v);
+        const ok = r => f.length ? (!by('sec').length || by('sec').includes(r.section)) && (!by('item').length || by('item').includes(r.item))
+          && (!by('trip').length || by('trip').includes(r.trip || '')) && by('text').every(t => [r.section, r.item, r.remark].some(x => String(x).toLowerCase().includes(t.toLowerCase())))
+          : [r.section, r.item, r.remark].some(x => String(x).toLowerCase().includes(q));
+        const hit = R.filter(r => r.date.slice(0, 7) >= from && ok(r)).sort((a, b) => b.date.localeCompare(a.date));
+        return { rows: hit.slice(0, 300), count: hit.length, total: hit.reduce((a, r) => a + r.amount, 0), filtered: !!f.length };
       }
       case 'inbox': return { rows: INBOX };
       case 'merchants': return { rows: MERCH };
@@ -1071,7 +1157,8 @@ const CUR = Object.fromEntries([...CUR_MAIN, ...CUR_MORE].map(c => [c[0], c]));
 // 類別色盤（已通過色盲及對比驗證）；淺色／深色各一套。顏色跟隨類別，不跟排名
 const PAL_L = ['#2a78d6','#eb6834','#1baf7a','#eda100','#e87ba4','#008300','#6250d6','#e34948'];
 const PAL_D = ['#3987e5','#d95926','#199e70','#c98500','#d55181','#0ca30c','#9085e9','#e66767'];
-const pal = () => matchMedia('(prefers-color-scheme: dark)').matches ? PAL_D : PAL_L;
+const isDark = () => { const t = document.documentElement.dataset.theme; return t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; };
+const pal = () => isDark() ? PAL_D : PAL_L;
 const secColor = sec => pal()[Math.max(0, ORDER.indexOf(sec))];
 const TITLES = {input:'新增支出', expense:'支出概覽', analysis:'每月分析', trips:'旅程', splits:'分帳', inbox:'待確認消費', search:'搜尋', settings:'設定'};
 const IH = 40;
@@ -1231,7 +1318,7 @@ async function loadFixed(){
 const getQ = () => JSON.parse(localStorage.getItem('expenseQueue') || '[]');
 const setQ = q => { localStorage.setItem('expenseQueue', JSON.stringify(q)); updateSync(); };
 let flushing = false, inFlight = null, syncErr = '';
-const API_VERSION = 9; // 與 Code.gs 的 API_VERSION 對應
+const API_VERSION = 10; // 與 Code.gs 的 API_VERSION 對應
 // 同步健康狀態（只存本機）：okAt 最後成功同步時間；err／errAt 最近一次錯誤
 function noteHealth(ok, err){
   const h = lsGet('syncHealth', {});
@@ -2706,39 +2793,100 @@ function applyLaunchParams(){
   return false;
 }
 
-/* ---------- 搜尋 ---------- */
-let srT;
+/* ---------- 搜尋：篩選標籤 ----------
+   輸入時顯示建議（類別、項目、旅程、常用備註，及「搜尋『…』」關鍵字），按一下加入為標籤；可疊加多個條件：
+   不同種類之間為「且」（例如 日常 ＋ 午餐 ＋ 大快活），同種類之間為「或」（例如 日常 或 其他）。
+   伺服器（API_VERSION ≥ 10）以參數 f 篩選全部紀錄；舊版伺服器則以第一個條件查詢，再在本機套用其餘條件。
+   結果：總支出／筆數／平均每次＋按日分組列表，每筆附類別及項目標籤（按標籤可加入為條件）。 */
+S.srF = [];
+const SR_EM = { sec:{旅遊:'✈️',日常:'☀️',固定:'📌',其他:'🧩'}, trip:'🧳', text:'🔎' };
+const srEm = f => f.t === 'sec' ? SR_EM.sec[f.v] || '•' : f.t === 'item' ? iconOf('', f.v) : SR_EM[f.t];
+function srMatch(r, F){
+  const by = t => F.filter(x => x.t === t).map(x => x.v), sec = by('sec'), item = by('item'), trip = by('trip'), text = by('text');
+  if (sec.length && !sec.includes(r.section)) return false;
+  if (item.length && !item.includes(r.item)) return false;
+  if (trip.length && !trip.includes(r.trip || '')) return false;
+  return text.every(q => [r.section, r.item, r.remark].some(x => String(x || '').toLowerCase().includes(q.toLowerCase())));
+}
+function srSuggest(q){
+  q = q.trim(); const lq = q.toLowerCase(), out = [];
+  const has = (t,v) => S.srF.some(x => x.t === t && x.v === v);
+  const push = (t, v, note) => { if (!has(t,v) && (!lq || String(v).toLowerCase().includes(lq)) && !out.some(x => x.t === t && x.v === v)) out.push({ t, v, note }); };
+  if (q) out.push({ t:'text', v:q, raw:true });
+  ORDER.forEach(x => push('sec', x, '類別'));
+  const items = new Set(); ORDER.forEach(x => (SECTIONS[x] || []).forEach(([n]) => items.add(n)));
+  [...items].slice(0, q ? 99 : 6).forEach(n => push('item', n, '項目'));
+  (S.trips || []).forEach(t => push('trip', t.name, '旅程'));
+  if (q){ const m = new Map(); Object.values(lsGet('remarkLog', {})).forEach(([, rm]) => { if (String(rm).toLowerCase().includes(lq)) m.set(rm, (m.get(rm) || 0) + 1); });
+    [...m].sort((a,b) => b[1] - a[1]).slice(0, 5).forEach(([rm]) => push('text', rm, '備註')); }
+  return out.slice(0, q ? 12 : 10);
+}
+function srChipHtml(f, i){
+  const c = f.t === 'sec' ? secColor(f.v) : f.t === 'trip' ? secColor('旅遊') : '';
+  return `<span class="sr-chip"${c ? ` style="--c:${c}"` : ''}>${srEm(f)} ${esc(f.v)}<button type="button" data-rm="${i}" aria-label="移除 ${esc(f.v)}">×</button></span>`;
+}
+function srRenderBox(){
+  $('#srChips').innerHTML = S.srF.map(srChipHtml).join('');
+  $('#srQ').placeholder = S.srF.length ? '再加條件…' : '輸入類別、項目、店名…';
+  const q = $('#srQ').value;
+  if (S.srF.length && !q && document.activeElement !== $('#srQ')){ $('#srSugg').innerHTML = ''; S.srSug = []; return; } // 已有條件：輸入框聚焦或輸入時才顯示建議
+  $('#srSugg').innerHTML = srSuggest(q).map((x,i) => x.raw
+    ? `<button type="button" class="sr-s raw" data-s="${i}">🔎 搜尋「${esc(x.v)}」</button>`
+    : `<button type="button" class="sr-s" data-s="${i}">${srEm(x)} ${esc(x.v)}<small>${x.note}</small></button>`).join('');
+  S.srSug = srSuggest(q);
+}
 function renderSearch(){
   $$('#srRange [data-r]').forEach(b => b.classList.toggle('active', Number(b.dataset.r) === S.srRange));
-  if ($('#srQ').value.trim()) doSearch(); else { $('#srBody').innerHTML = '<p class="muted small" style="margin:14px 4px">輸入店名、備註或項目，例如「壽司郎」「交通」，查看累計次數、總額及平均每次金額。</p>'; setTimeout(() => $('#srQ').focus(), 50); }
+  srRenderBox();
+  if (S.srF.length) doSearch();
+  else $('#srBody').innerHTML = '<p class="muted small" style="margin:14px 4px">選擇或輸入條件，例如「日常」＋「午餐」，或店名「大快活」。可疊加多個條件：不同種類同時符合，同種類任一符合。</p>';
 }
+const srAdd = f => { S.srF.push(f); $('#srQ').value = ''; renderSearch(); };
 async function doSearch(){
-  const q = $('#srQ').value.trim(), box = $('#srBody'); if (!q) return renderSearch();
+  const F = S.srF.slice(), box = $('#srBody'); if (!F.length) return renderSearch();
   const from = S.srRange ? shiftYm(todayStr().slice(0,7), -(S.srRange - 1)) : '';
   box.innerHTML = '<p class="muted" style="margin:14px 4px">搜尋中…</p>';
   try {
-    const j = await get({action:'search', q, from});
-    if (q !== $('#srQ').value.trim()) return; // 已輸入新關鍵字
-    const local = getQ().filter(r => (!from || r.date.slice(0,7) >= from) && [r.section, r.item, r.remark].some(x => String(x||'').toLowerCase().includes(q.toLowerCase()))).map(r => ({...r, pending:true}));
-    const rows = [...local, ...j.rows]; S.searchRows = rows;
-    const count = j.count + local.length, total = j.total + sum(local);
-    if (!count){ box.innerHTML = `<p class="muted" style="margin:14px 4px">找不到「${esc(q)}」。</p>`; return; }
-    let list = '', lastM = '';
-    const mTot = {}; rows.forEach(r => { const m = r.date.slice(0,7); mTot[m] = (mTot[m]||0) + r.amount; });
-    rows.forEach(r => { const m = r.date.slice(0,7); if (m !== lastM){ lastM = m; list += `<div class="sr-month"><span>${ymLabel(m)}</span><span class="num">${money(round2(mTot[m]))}</span></div>`; } list += recRow(r, true); });
-    box.innerHTML = `<div class="card" style="margin-top:12px"><div class="stats">
-        <div><div class="muted small">「${esc(q)}」共 ${count} 筆</div><div class="total">${money(round2(total))}</div></div>
-        <div><div class="muted small">平均每次</div><div class="delta">${money(round2(total / count))}</div></div>
-        <div><div class="muted small">最近一次</div><div class="delta">${rows[0].date}</div></div>
-      </div></div>
-      <div class="card list" style="margin-top:12px">${list}</div>
-      ${j.count > j.rows.length ? `<p class="small muted">只列出最近 ${j.rows.length} 筆；合計已包括全部 ${j.count} 筆。</p>` : ''}`;
+    const j = await get({ action:'search', q:F[0].v, from, f:JSON.stringify(F) });
+    if (JSON.stringify(F) !== JSON.stringify(S.srF)) return; // 條件已改變
+    let srv = j.rows, count = j.count, total = j.total;
+    if (!j.filtered){ srv = srv.filter(r => srMatch(r, F)); count = srv.length; total = sum(srv); } // 舊版伺服器：本機套用其餘條件
+    const local = getQ().filter(r => (!from || r.date.slice(0,7) >= from) && srMatch(r, F)).map(r => ({...r, pending:true}));
+    const rows = [...local, ...srv].sort((a,b) => b.date.localeCompare(a.date)); S.searchRows = rows;
+    count += local.length; total += sum(local);
+    if (!count){ box.innerHTML = '<p class="muted" style="margin:14px 4px">沒有符合所有條件的紀錄。</p>'; return; }
+    const days = {}; rows.forEach(r => (days[r.date] ||= []).push(r));
+    const W = '日一二三四五六', dl = d => { const [y,m,dd] = d.split('-').map(Number); return `${ddmm(d)}（週${W[new Date(y,m-1,dd).getDay()]}）`; };
+    const row = r => { const title = r.remark || r.item;
+      return `<div class="sr-row" data-edit="${esc(r.id)}" role="button" tabindex="0"><span class="t">${esc(title)}${r.pending ? ' <small class="muted">待同步</small>' : ''}</span>
+        <span class="tags"><button type="button" class="tag" style="--c:${secColor(r.section)}" data-add="sec|${esc(r.section)}">${esc(r.section)}</button>${title !== r.item ? `<button type="button" class="tag it" data-add="item|${esc(r.item)}">${esc(r.item)}</button>` : ''}</span>
+        <span class="amt">${r.currency && r.currency !== 'HKD' ? `${curMoney(r.origAmount, r.currency)}<small>≈ ${money(r.amount)}</small>` : money(r.amount)}</span></div>`; };
+    box.innerHTML = `<div class="card" style="margin-top:12px"><div class="sr-sum">
+        <div><div class="lbl">總支出</div><div class="v">${money(round2(total))}</div></div>
+        <div><div class="lbl">筆數</div><div class="v">${count}</div></div>
+        <div><div class="lbl">平均每次</div><div class="v">${money(round2(total / count))}</div></div></div>
+        <div class="sr-last">最近一次 ${ddmm(rows[0].date)}${count > rows.length ? `，列出最近 ${rows.length} 筆（合計已包括全部 ${count} 筆）` : ''}</div></div>
+      <div class="card" style="margin-top:12px">${Object.entries(days).map(([d, rs]) => `<div class="sr-day"><span>${dl(d)}</span><span>${money(round2(sum(rs)))}</span></div>${rs.map(row).join('')}`).join('')}</div>`;
   } catch(e){ box.innerHTML = `<p class="muted" style="margin:14px 4px">${esc(errMsg(e))}</p>`; }
 }
-$('#srQ').addEventListener('input', () => { clearTimeout(srT); srT = setTimeout(doSearch, 450); });
-$('#srQ').addEventListener('keydown', e => { if (e.key === 'Enter'){ clearTimeout(srT); e.target.blur(); doSearch(); } });
+$('#srQ').addEventListener('input', srRenderBox);
+$('#srQ').addEventListener('focus', srRenderBox);
+$('#srQ').addEventListener('blur', () => setTimeout(() => { if (S.srF.length && !$('#srQ').value && !$('#srSugg').matches(':hover')) srRenderBox(); }, 200));
+$('#srQ').addEventListener('keydown', e => {
+  if (e.key === 'Enter'){ e.preventDefault(); const q = e.target.value.trim(); if (q) srAdd({ t:'text', v:q }); e.target.blur(); }
+  else if (e.key === 'Backspace' && !e.target.value && S.srF.length){ S.srF.pop(); renderSearch(); }
+});
+$('#srField').addEventListener('click', e => {
+  const b = e.target.closest('[data-rm]'); if (b){ S.srF.splice(+b.dataset.rm, 1); renderSearch(); return; }
+  if (e.target === e.currentTarget || e.target.id === 'srChips') $('#srQ').focus();
+});
+$('#srSugg').addEventListener('click', e => { const b = e.target.closest('[data-s]'); if (!b) return; const x = S.srSug[+b.dataset.s]; if (x) srAdd({ t:x.t, v:x.v }); });
 $('#srRange').addEventListener('click', e => { const b = e.target.closest('[data-r]'); if (!b) return; S.srRange = Number(b.dataset.r); renderSearch(); });
-$('#srBody').addEventListener('click', e => { const ed = e.target.closest('[data-edit]'); if (ed) openRec(ed.dataset.edit); });
+$('#srBody').addEventListener('click', e => {
+  const a = e.target.closest('[data-add]');
+  if (a){ const [t, v] = a.dataset.add.split('|'); if (!S.srF.some(x => x.t === t && x.v === v)) srAdd({ t, v }); scrollTo({ top:0, behavior:'smooth' }); return; }
+  const ed = e.target.closest('[data-edit]'); if (ed) openRec(ed.dataset.edit);
+});
 
 /* ---------- settings ---------- */
 function renderSettings(){
@@ -2801,13 +2949,78 @@ function syncItems(){
   }).catch(() => {});
 }
 
-/* ---------- 預算設定 ---------- */
-function renderBudget(){
-  const BUD_LABEL = { var:'<b>可控消費預算</b><br><small class="muted">日常＋旅遊＋其他</small>', total:'每月總預算<br><small class="muted">含固定支出</small>' };
-  $('#budBox').innerHTML = ['var', 'total', ...ORDER.filter(k => k !== '固定' || S.settings['budget.固定'])].map(k => `<label for="bud-${k}">${BUD_LABEL[k] || k}</label>
-    <input class="text-in" id="bud-${k}" data-bud="${k}" type="text" inputmode="decimal" placeholder="不設" value="${S.settings['budget.'+k] ? withCommas(S.settings['budget.'+k]) : ''}">`).join('');
+/* ---------- 外觀：自動（跟隨系統）→ 淺色 → 深色 ---------- */
+const THEME_UI = { '':['自動','<path d="M12 3a9 9 0 1 0 0 18z" fill="currentColor"/><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/>'],
+  light:['淺色','<circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2.5v2.2M12 19.3v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>'],
+  dark:['深色','<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>'] };
+function renderThemeBtn(){
+  const t = document.documentElement.dataset.theme || '', [l, ic] = THEME_UI[t];
+  $('#themeBtn').innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${ic}</svg><span>${l}</span>`;
+  $('#themeBtn').setAttribute('aria-label', `外觀：${l}（按此切換）`);
+  const m = document.querySelector('meta[name="theme-color"]:not([media])'); // 經典版狀態列顏色
+  if (m) m.content = isDark() ? '#10161A' : '#37474F';
 }
-$('#budBox').addEventListener('input', e => { if (e.target.dataset.bud) fmtAmountInput(e.target); });
+$('#themeBtn').addEventListener('click', () => {
+  const nx = { '':'light', light:'dark', dark:'' }[document.documentElement.dataset.theme || ''];
+  if (nx) document.documentElement.dataset.theme = nx; else delete document.documentElement.dataset.theme;
+  try { nx ? localStorage.setItem('uiTheme', nx) : localStorage.removeItem('uiTheme'); } catch(e){}
+  renderThemeBtn(); toast(`外觀：${THEME_UI[nx][0]}`);
+});
+renderThemeBtn();
+
+/* ---------- 預算設定 ---------- */
+function budAvg(summ){ // 近 3 個已完結月份的平均實際消費（可控、總額、各類別）
+  const cur = todayStr().slice(0,7), ms = [1,2,3].map(k => summ?.[shiftYm(cur,-k)]).filter(m => m && m._n);
+  if (!ms.length) return null;
+  const o = { _n:ms.length }, add = (k,v) => o[k] = (o[k] || 0) + v / ms.length;
+  ms.forEach(m => { ORDER.forEach(x => add(x, m[x] || 0)); add('var', ORDER.filter(x => x !== '固定').reduce((a,x) => a + (m[x] || 0), 0)); add('total', ORDER.reduce((a,x) => a + (m[x] || 0), 0)); });
+  return o;
+}
+function budScale(k, v, avg){ // 滑桿上限：平均的 2 倍或現值的 1.3 倍（取大者），進位至千
+  const mx = Math.max(avg ? avg * 2 : 0, v * 1.3, k === 'var' || k === 'total' ? 5000 : 1000);
+  return Math.ceil(mx / 1000) * 1000;
+}
+function budSync(card, v, fromRange){ // 同步數字、滑桿及填色
+  const r = card.querySelector('.bud-range'), n = card.querySelector('.bud-num');
+  if (!fromRange && v > Number(r.max)) r.max = budScale(card.dataset.k, v, Number(card.dataset.avg) || 0);
+  if (!fromRange) r.value = v || 0; else n.value = v > 0 ? withCommas(v) : '';
+  r.style.setProperty('--p', (Number(r.value) / Number(r.max) * 100) + '%');
+  // 數字寬度貼合內容（以字型實際量度），令 HK$ 與 /月 緊貼
+  const cx = budSync.cx || (budSync.cx = document.createElement('canvas').getContext('2d')), cs = getComputedStyle(n);
+  cx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`; n.style.width = Math.ceil(cx.measureText(n.value || '不設').width + 6) + 'px';
+  const a = Number(card.dataset.avg), m = card.querySelector('.bud-avg');
+  if (a > 0){ m.hidden = false; m.style.left = Math.min(100, a / Number(r.max) * 100) + '%'; }
+}
+function renderBudget(){
+  const LBL = { var:['可控消費預算','日常＋旅遊＋其他'], total:['每月總預算','含固定支出'] };
+  const keys = ['var', 'total', ...ORDER.filter(k => k !== '固定' || S.settings['budget.固定'])];
+  const card = k => { const v = Number(S.settings['budget.' + k]) || 0, [l, sm] = LBL[k] || [k, ''];
+    return `<div class="bud-card${LBL[k] ? '' : ' sm'}" data-k="${k}">
+      <div class="bud-lbl">${l}${sm ? `<small>${sm}</small>` : ''}</div>
+      <div class="bud-amt"><span class="cur">HK$</span><input class="bud-num" id="bud-${k}" data-bud="${k}" type="text" inputmode="numeric" placeholder="不設" aria-label="${l}" value="${v ? withCommas(v) : ''}"><span class="per">/月</span></div>
+      <div class="bud-track"><input type="range" class="bud-range" aria-label="${l}（滑桿）" min="0" max="${budScale(k, v)}" step="${LBL[k] ? 100 : 50}" value="${v}"><i class="bud-avg" hidden></i></div>
+      <div class="bud-meta"><span class="avg-t">近 3 個月平均 —</span><button type="button" class="link-btn" data-use hidden>套用平均</button></div>
+    </div>`; };
+  $('#budBox').innerHTML = keys.slice(0,2).map(card).join('') + `<details class="bud-more"${keys.slice(2).some(k => S.settings['budget.' + k]) ? ' open' : ''}><summary>按類別設定預算</summary>${keys.slice(2).map(card).join('')}</details>`;
+  $$('#budBox .bud-card').forEach(c => budSync(c, Number(S.settings['budget.' + c.dataset.k]) || 0));
+  loadSummary().then(summ => { const avg = budAvg(summ); if (!avg) return;
+    $$('#budBox .bud-card').forEach(c => { const a = Math.round(avg[c.dataset.k] || 0); if (!a) return; c.dataset.avg = a;
+      const r = c.querySelector('.bud-range'), v = num(c.querySelector('.bud-num').value) || 0;
+      r.max = budScale(c.dataset.k, v, a);
+      c.querySelector('.avg-t').innerHTML = `近 ${avg._n} 個月平均 <b>${money(a)}</b>`; c.querySelector('[data-use]').hidden = false;
+      budSync(c, v); });
+  }).catch(() => {});
+}
+$('#budBox').addEventListener('input', e => {
+  const c = e.target.closest('.bud-card'); if (!c) return;
+  if (e.target.classList.contains('bud-range')) budSync(c, Number(e.target.value), true);
+  else if (e.target.dataset.bud){ fmtAmountInput(e.target); budSync(c, num(e.target.value) || 0); }
+});
+$('#budBox').addEventListener('click', e => {
+  const b = e.target.closest('[data-use]'); if (!b) return;
+  const c = b.closest('.bud-card'), v = Math.round(Number(c.dataset.avg) / 100) * 100;
+  c.querySelector('.bud-num').value = withCommas(v); budSync(c, v);
+});
 $('#budSave').addEventListener('click', async () => {
   const st = {}; $$('#budBox [data-bud]').forEach(i => { const v = num(i.value); st['budget.' + i.dataset.bud] = v > 0 ? Math.round(v) : ''; });
   const btn = $('#budSave'); btn.disabled = true;

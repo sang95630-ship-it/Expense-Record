@@ -11,6 +11,7 @@
     Android 觸感回饋（navigator.vibrate）；系統「減少動態效果」時全部停用
 - 每次修改 classic.html 後重新執行，令新設計保持最新
 """
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -33,7 +34,8 @@ TINTS = [('steel', '鋼藍', '#2F6F94'), ('blue', '藍', '#007AFF'), ('indigo', 
          ('teal', '青', '#1A8CA6'), ('pink', '粉紅', '#D3264F'), ('graphite', '石墨', '#5B5B60')]
 tint_btns = ''.join(f'<button type="button" class="tint-dot" data-tint="{k}" style="--c:{c}" aria-label="{n}"><i></i><span>{n}</span></button>' for k, n, c in TINTS)
 sub('<a class="ui-switch" id="uiSwitch" href="./"><span>✨</span><span><b>改用新設計（預設）</b><small>經典版為後備版本，資料共用</small></span><span>›</span></a>',
-    '<a class="ui-switch" id="uiSwitch" href="classic.html"><span>↩︎</span><span><b>改用經典版</b><small>後備版本，資料共用，可隨時切換回來</small></span><span>›</span></a>\n'
+    '<a class="ui-switch" id="uiSwitch" href="classic.html"><span>↩︎</span><span><b>改用經典版</b><small>後備版本，資料共用，可隨時切換回來</small></span><span>›</span></a>')
+sub('<button type="button" class="theme-btn" id="themeBtn"></button></div>', '<button type="button" class="theme-btn" id="themeBtn"></button></div>\n'
     f'      <div class="card tint-card" id="tintCard"><div class="tint-h">強調色</div><div class="tint-row" id="tintRow">{tint_btns}</div></div>')
 
 # 彈簧曲線：阻尼彈簧 x(t)（SwiftUI .spring(duration:, bounce:) 同一模型）取樣成 CSS linear()
@@ -169,7 +171,11 @@ button:active:not(:disabled){transform:scale(.96)}
 .rm-chip{border:0;background:var(--surface-2);font-size:14px;padding:6px 13px}
 .sp-chip{border:0;background:var(--surface-2);font-size:15px}
 .sp-chip.on{background:var(--primary);color:var(--primary-ink)}
-.ui-switch,.tint-card{border-radius:var(--r-card)}
+.ui-switch,.tint-card,.theme-btn{border-radius:var(--r-card)}
+.theme-btn{color:var(--primary);font-weight:600}
+.bud-card{border-bottom:.5px solid var(--line)}
+.bud-num,.sr-sum .v{font-family:ui-rounded,"SF Pro Rounded",-apple-system,system-ui,sans-serif}
+.sr-field{border-radius:var(--r-field)}
 .it-row button,.rule button{border:0;background:var(--surface-2);border-radius:12px}
 .it-row button.x,.rule button{color:var(--danger)}
 
@@ -339,5 +345,9 @@ JS = r"""
 """
 sub('</body>', JS + '</body>')
 
+# 手動深色（外觀按鈕）：把 @media 深色區塊複製一份給 :root[data-theme="dark"]
+m = re.search(r'@media \(prefers-color-scheme: dark\)\{\n(  :root:not\(\[data-theme="light"\]\)\{.*?\n  \}\n(?:  :root:not.*?\n)*)\}', CSS, re.S)
+assert m, 'dark block'
+sub('</style>', m.group(1).replace(':root:not([data-theme="light"])', ':root[data-theme="dark"]') + '</style>')
 (ROOT / 'index.html').write_text(s, encoding='utf-8')
 print(f'已產生 index.html（{len(s.encode("utf-8")) // 1024} KB）')

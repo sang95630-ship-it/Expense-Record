@@ -61,10 +61,12 @@
 | + | 固定項目週期：每月／每年（`Fixed.Cycle` = M／Y；年繳於起始月份的同月 1 號入帳）；Expense 固定合計以年繳 ÷12 攤分 | ✅ |
 | + | 自訂快選項目：設定頁編輯（emoji、名稱、次序、新增／刪除、還原預設），存於 Sheet `Items`，本機快取 `itemsCfg`；未自訂的類別用 `DEFAULT_SECTIONS` | ✅ |
 | + | 看門狗 `watchdog()`（每小時）：固定支出未入帳自動補跑、備份逾 8 日、連續 3 日未記帳（21:00 檢查）、通知轉發器 3 日無回報（第 5 期）；經 CallMeBot Signal 通知，同類每日一則，失敗入 `NOTIFY_QUEUE` 補發；每月固定入帳發摘要 | ✅ |
+| + | 每月預算設定卡（參考 Copilot 式）：每項預算以大數字（可直接輸入）＋滑桿設定，滑桿上橙色標記為近 3 個已完結月份平均實際消費（`budAvg`，來自 `summary`），「套用平均」一按設為平均值（取整至百）；可控消費及總預算置頂，各類別預算收在「按類別設定預算」 | ✅ |
+| + | 外觀：設定頁頂部「改用經典版／新設計」旁的按鈕循環 自動→淺色→深色（`data-theme`，localStorage `uiTheme`，`<head>` 內先套用避免閃爍；`isDark()` 供圖表色盤使用） | ✅ |
 | + | 每月預算（設定頁；Sheet `Settings` 鍵 `budget.var`（可控消費＝日常＋旅遊＋其他，設定頁置頂）／`budget.total`（含固定）／`budget.<類別>`，本機快取 `settingsCfg`）：Expense 頁進度條（✓／⚠️ ≥80%／⛔ ≥100%）；看門狗 09:00–22:00 達 80%／100% 經 Signal 提醒，每（類別, 月, 門檻）一次（`BUDGET_SENT`） | ✅ |
 | + | 月底預測（Expense 頁本月，第 3 日起）：固定＋旅遊按實數，日常＋其他按日均外推至整月；與總預算比較 | ✅ |
 | + | 趨勢（Analysis 頁底）：近 6／12 個月按類別堆疊柱狀圖（由下而上 固定／日常／其他／旅遊），虛線為已完結月份平均，本月半透明，點柱跳到該月，附數據表；統計加「對比去年同月」；`summary` 一次取 24 個月，快取於 `S.summary`，寫入後失效 | ✅ |
-| + | 搜尋頁（sidebar 🔍）：備註／項目／類別關鍵字，近 3／12 個月／全部；顯示筆數、合計、平均每次、最近一次，按月分組，可直接修改；包括未同步紀錄 | ✅ |
+| + | 搜尋頁（sidebar 🔍）：篩選標籤——輸入時建議類別／項目／旅程／常用備註／「搜尋『…』」關鍵字，按一下成為標籤（× 移除，空白時 Backspace 刪最後一個）；可疊加：不同種類為「且」、同種類為「或」（`srMatch`）；伺服器 `action=search&f=[{t,v}]`（API_VERSION 10，回傳 `filtered:true`；舊版伺服器以第一條件查詢再本機篩選）；近 3／12 個月／全部；結果：總支出／筆數／平均每次＋最近一次，按日分組（DD/MM（週x）＋當日合計），每筆附類別及項目標籤（按標籤加入條件），按該行可修改；包括未同步紀錄 | ✅ |
 | + | 圖表色盤：dataviz 參考色盤（已驗證色盲及對比），`PAL_L`／`PAL_D`；類別色固定跟隨類別（`secColor`），不跟排名 | ✅ |
 | + | 通知自動記帳（第 5 期）：Tasker 轉發銀行短訊（見 `TASKER.md`）→ `action=inbox`；`PARSERS` 支援中銀信用卡、中銀戶口自動轉賬、花旗、安信、中國移動繳費；外幣以 open.er-api.com 換算（`fxRate_`，快取 6 小時）；`Merchants` 規則 auto／ask／ignore，商戶名互相包含（≥6 字元）即配對（應付不同卡截短）；支付平台（`GENERIC`：Alipay／WeChat Pay／PayMe 等）必須逐筆確認、不建規則；項目 `@meal` 按交易時間判斷早（05–11）／午（11–16）／晚（17–23）餐，其餘零食；同 HKD 金額 15 分鐘內不同短訊標示可能重複且不自動入帳；Signal：✅ 已入帳／🔔 待確認；前端「📥 待確認」頁（badge＋新增支出頁頂 banner）及商戶規則管理 | ✅ |
 | + | 旅程（第 4 期）：Sheet `Trips`（Name／Start／End／Currency／Note），`Records.Trip` 欄；新增支出選「旅遊」時顯示旅程選單，預設為日期所在旅程或 60 日內出發的旅程（出發前買機票），並切換至旅程預設幣種；短訊自動入帳的旅遊支出按日期自動標記（`tripFor_`）；旅程頁顯示合計、筆數、每日平均、外幣原額及按項目分佈；改名同步更新紀錄；修改紀錄可補選旅程 | ✅ |
@@ -106,7 +108,7 @@
 - GET `action=info` → `{sheetUrl, version, lastBackup, serverTime, signal, lastWatchdog, notifyQueue}`
 - GET `action=items` → `{items:{section:[[name, emoji], …]}}`
 - GET `action=inbox` → 待確認列表；`action=merchants` → 規則；`action=trips` → 旅程及統計
-- GET `action=settings` → `{settings}`；`action=summary&from&to` → `{months:{ym:{類別:金額, _n}}}`；`action=search&q&from` → `{rows（最近 300 筆）, count, total}`
+- GET `action=settings` → `{settings}`；`action=summary&from&to` → `{months:{ym:{類別:金額, _n}}}`；`action=search&q&from[&f]` → `{rows（最近 300 筆）, count, total[, filtered]}`（`f`＝JSON 篩選標籤，API_VERSION 10）
 - GET `action=list&month=yyyy-MM` → `{rows}`（含 `splitId`）；`action=splits` → `{rows}`
 - GET `action=fixed` → `{rows}`
 - POST `add`（固定項目可帶 `cycle`）/ `updateRecord` / `deleteRecord` / `updateFixed`（可帶 `cycle`）/ `toggleFixed` / `saveItems`（`items` 為空即還原預設）/ `saveSettings`（值為空即刪除該鍵）/ `inbox`（Tasker，亦接受 form-urlencoded）/ `confirmInbox`（remember：auto／ask／空）/ `dismissInbox`（remember：ignore）/ `saveRule` / `deleteRule` / `saveTrip`（`oldName` 改名）/ `deleteTrip`（`untag` 一併清除紀錄標記） / `saveSplit`（`split`＋`records`＝我的份額，以 SplitID 同步 Records）/ `deleteSplit`（連同紀錄）；`add`／`updateRecord` 可帶 `trip`

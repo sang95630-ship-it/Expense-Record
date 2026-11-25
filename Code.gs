@@ -1,7 +1,7 @@
 /**** 記帳簿 後端：貼到 Google Sheet → 擴充功能 → Apps Script ****/
 // TOKEN 不再寫在程式碼內：請到「專案設定 → 指令碼屬性」新增屬性 TOKEN（值 = 你的密碼）。
 // 之後更新 Code.gs 可直接整份貼上；更換 TOKEN 只需改屬性值，毋須重新部署。
-const API_VERSION = 9;            // 前端用來檢查 Code.gs 是否已更新
+const API_VERSION = 10;            // 前端用來檢查 Code.gs 是否已更新
 const BACKUP_FOLDER = '記帳簿備份'; // Google Drive 備份資料夾名稱
 const BACKUP_KEEP = 8;            // 保留最近 8 份（約 2 個月）
 const REC = 'Records', FIX = 'Fixed', ITEMS = 'Items', SETTINGS = 'Settings', INBOX = 'Inbox', MERCH = 'Merchants';
@@ -247,6 +247,17 @@ function doGet(e) {
     }
     if (p.action === 'search') {
       const q = String(p.q || '').trim().toLowerCase(), from = p.from || '0000-00';
+      // 篩選標籤（API_VERSION 10）：f=[{t:sec|item|trip|text, v}]；不同種類為「且」，同種類為「或」
+      let f = []; try { f = JSON.parse(p.f || '[]'); } catch (e) {}
+      if (f.length) {
+        const by = t => f.filter(x => x && x.t === t).map(x => String(x.v));
+        const sec = by('sec'), item = by('item'), trip = by('trip'), text = by('text').map(x => x.toLowerCase());
+        const hitF = rows_(REC).filter(r => r[0] && ym_(r[1]) >= from && (!sec.length || sec.indexOf(String(r[2])) >= 0)
+          && (!item.length || item.indexOf(String(r[3])) >= 0) && (!trip.length || trip.indexOf(String(r[11] || '')) >= 0)
+          && text.every(t => [r[2], r[3], r[5]].some(x => String(x).toLowerCase().indexOf(t) >= 0)))
+          .map(recObj_).sort((a, b) => b.date.localeCompare(a.date));
+        return { rows: hitF.slice(0, 300), count: hitF.length, total: hitF.reduce((a, r) => a + r.amount, 0), filtered: true };
+      }
       if (!q) return { rows: [], count: 0, total: 0 };
       const hit = rows_(REC).filter(r => r[0] && ym_(r[1]) >= from && [r[2], r[3], r[5]].some(x => String(x).toLowerCase().indexOf(q) >= 0))
         .map(recObj_).sort((a, b) => b.date.localeCompare(a.date));
