@@ -1086,6 +1086,8 @@ const amtHtml = r => r.currency && r.currency !== 'HKD'
   ? `${curMoney(r.origAmount, r.currency)}<small class="hk">≈ ${money(r.amount)}</small>` : money(r.amount);
 const round2 = n => Math.round(n*100)/100;
 const num = v => parseFloat(String(v ?? '').replace(/,/g,''));
+// 日期顯示一律 DD/MM（輸入 yyyy-MM-dd）
+const ddmm = d => `${String(d).slice(8,10)}/${String(d).slice(5,7)}`;
 const withCommas = n => { const [i,d] = String(n).split('.'); return i.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (d !== undefined ? '.'+d : ''); };
 // 金額輸入：即時加千位分隔號，最多 2 位小數，並保持游標位置
 function fmtAmountInput(el){
@@ -1532,7 +1534,7 @@ async function save(){
   setQ([...getQ(), rec]); learnRemarks([{...rec, createdAt:new Date().toISOString()}]);
   // 提示包含項目、金額（外幣附港幣換算）及非今天的日期，方便即時核對
   const what = `${rec.item} ${rec.currency !== 'HKD' ? `${curMoney(rec.origAmount, rec.currency)}（≈ ${money(rec.amount)}）` : money(rec.amount)}`
-    + (rec.date !== todayStr() ? `，${rec.date.slice(5).replace('-','/')}` : '');
+    + (rec.date !== todayStr() ? `，${ddmm(rec.date)}` : '');
   toast(rec.section === '固定' ? `已儲存：${what}，${rec.cycle === 'Y' ? '明年起每年' : '下個月起'}自動入帳`
     : navigator.onLine === false ? `已儲存在本機：${what}，有網絡時自動同步` : `已儲存：${what}`, UNDO_MS,
     { label:'復原', fn:() => undoSave(rec) });
@@ -1603,10 +1605,9 @@ async function renderRecent(){
   }
 }
 const HL_BIG = 200, HL_MID = 100; // 大額高亮門檻（HKD）
-// dm：日期以 DD/MM 顯示（固定支出分頁）
-function recRow(r, withDel, noDate, hl, dm){
+function recRow(r, withDel, noDate, hl){
   const lv = hl && r.section !== '固定' ? (r.amount >= HL_BIG ? ' hl-big' : r.amount >= HL_MID ? ' hl-mid' : '') : '';
-  const sub = `${noDate ? '' : (dm ? `${r.date.slice(8,10)}/${r.date.slice(5,7)}` : r.date.slice(5).replace('-','/')) + '，'}${r.section}${r.remark ? '，'+esc(r.remark) : ''}${r.pending ? '，待同步' : ''}`;
+  const sub = `${noDate ? '' : ddmm(r.date) + '，'}${r.section}${r.remark ? '，'+esc(r.remark) : ''}${r.pending ? '，待同步' : ''}`;
   return `<div class="rec${lv}"><span class="em">${iconOf(r.section,r.item)}</span>
     <div class="main"><div>${esc(r.item)}</div><div class="sub">${sub}</div></div>
     <span class="amt">${amtHtml(r)}</span>
@@ -1702,7 +1703,7 @@ async function renderExpense(){
       `<button type="button" role="tab" data-etab="${k}" class="${k === tab ? 'active' : ''}" aria-selected="${k === tab}">${l}</button>`).join('')}</div>`;
     if (tab === 'fix'){
       const list = [...fixRows].sort((a,b) => b.date.localeCompare(a.date) || b.amount - a.amount);
-      html += list.length ? `<div class="card list">${list.map(r => recRow(r, true, false, false, true)).join('')}</div>
+      html += list.length ? `<div class="card list">${list.map(r => recRow(r, true)).join('')}</div>
         <div class="fx-total"><span class="muted">本月固定支出 ${list.length} 筆</span><b class="num">${money(round2(fixTotal))}</b></div>`
         : empty('本月未有固定支出入帳。');
     } else {
@@ -2149,7 +2150,7 @@ async function renderTrips(){
     const fx = Object.entries(t.byCur || {}).map(([c,v]) => curMoney(round2(v), c)).join('、');
     return `<div class="card trip-card">
       <div class="trip-head"><div><b>${esc(t.name)}</b>${now ? '<span class="trip-now">進行中</span>' : ''}
-        <div class="sub muted small">${t.start ? `${t.start.slice(5).replace('-','/')}–${t.end.slice(5).replace('-','/')}，${days} 日` : '只見於紀錄（未設日期）'}${t.currency ? `，${t.currency}` : ''}</div></div>
+        <div class="sub muted small">${t.start ? `${ddmm(t.start)}–${ddmm(t.end)}，${days} 日` : '只見於紀錄（未設日期）'}${t.currency ? `，${t.currency}` : ''}</div></div>
         ${t.start ? `<button class="ghost" type="button" data-tedit="${esc(t.name)}">修改</button>` : ''}</div>
       <div class="total">${money(round2(t.total || 0))}</div>
       <div class="sub muted small">${t.count || 0} 筆${days && t.total ? `，每日平均 ${money(round2(t.total / days))}` : ''}${fx ? `，外幣 ${fx}` : ''}</div>
@@ -2316,7 +2317,7 @@ function renderSplits(){
     const st = sp.status !== 'open' && !open.length ? 'done' : sp.status;
     return `<div class="card sp-card" data-spopen="${esc(sp.id)}">
       <div class="trip-head"><div><b>${esc(sp.name)}</b><span class="sp-st ${st}">${SP_ST[st]}</span>
-        <div class="sub muted small">${sp.date.slice(5).replace('-','/')}，${sp.data.people.length} 人，${sp.data.expenses.length} 筆${sp.trip ? `，${esc(sp.trip)}` : ''}${pend[sp.id] ? '，待同步' : ''}</div></div>
+        <div class="sub muted small">${ddmm(sp.date)}，${sp.data.people.length} 人，${sp.data.expenses.length} 筆${sp.trip ? `，${esc(sp.trip)}` : ''}${pend[sp.id] ? '，待同步' : ''}</div></div>
         <span class="num sp-total">${M(c.total)}</span></div>
       <div class="muted small">${sp.data.people.includes(ME) ? `我的份額 ${M(c.owe[ME] || 0)}${cur !== 'HKD' ? `（≈ ${money(round2((c.owe[ME] || 0) / u * rate))}）` : ''}` : '計算工具（我沒有參與，不入帳）'}</div>
       ${open.length ? `<div class="sp-open">${open.map(t => spTxHtml(t, M, sp.id)).join('')}</div>` : ''}
@@ -2434,8 +2435,8 @@ function spRenderRes(){
 // 複製文字（英文、精簡，日期 DD/MM）：標題、合計、各筆支出（多於一筆時）、各人應付、轉帳
 function spText(sp, c){
   const M = v => spMoney(v, c.unit, sp.currency).replace(' ', ''), P = sp.data.people, N = p => p === ME ? 'Me' : p;
-  const [, mm, dd] = sp.date.split('-'), d = `${dd}/${mm}`, md = `${mm}/${dd}`;
-  const title = /^分帳 \d\d\/\d\d$/.test(sp.name) ? 'Split' : sp.name.replace(md, '').trim() || 'Split';
+  const [, mm, dd] = sp.date.split('-'), d = `${dd}/${mm}`, md = `${mm}/${dd}`; // md：舊版預設名稱用 MM/DD
+  const title = /^分帳 \d\d\/\d\d$/.test(sp.name) ? 'Split' : sp.name.replace(d, '').replace(md, '').trim() || 'Split';
   const exps = sp.data.expenses, how = e => e.mode === 'w' ? ' (by shares)' : e.mode === 'x' ? ' (custom)'
     : P.some(p => e.inc[p] === false) ? ` (${P.filter(p => e.inc[p] !== false).map(N).join(', ')})` : '';
   const owe = P.map(p => c.owe[p]), same = owe.every(v => v === owe[0]);
@@ -2472,7 +2473,7 @@ function spAddPerson(name, focus){
 }
 // 驗證並整理（剔除空白支出、預設名稱）；回傳 {c} 或 {err}
 function spCheck(sp){
-  sp.name = sp.name.trim() || `分帳 ${sp.date.slice(5).replace('-','/')}`;
+  sp.name = sp.name.trim() || `分帳 ${ddmm(sp.date)}`;
   if (sp.data.expenses.length > 1) sp.data.expenses = sp.data.expenses.filter(e => String(e.amt).trim() || e.desc.trim()); // 剔除空白支出
   const c = spCalc(sp);
   const err = sp.data.people.length < 2 ? '最少需要 2 位參加者' : !sp.data.expenses.length ? '請輸入支出' : c.errs.length ? `支出未完成：${c.errs[0].err}`

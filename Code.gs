@@ -551,9 +551,9 @@ function inbox_(b) {
     recId = addRecord_({ id: id, date: p.date, section: rule.section, item: item, remark: rule.remark || p.merchant, currency: p.cur, origAmount: p.amt, amount: hkd });
     status = 'auto';
     const sh = sheet_(MERCH); sh.getRange(rule.row, 6).setValue(Number(sh.getRange(rule.row, 6).getValue() || 0) + 1);
-    notify_(`✅ 已入帳｜${item} ${rule.remark || p.merchant} ${money_('HKD', hkd)}｜${fmt_(ts, 'M/d HH:mm')}`);
+    notify_(`✅ 已入帳｜${item} ${rule.remark || p.merchant} ${money_('HKD', hkd)}｜${fmt_(ts, 'd/M HH:mm')}`);
   } else {
-    notify_(`🔔 待確認｜${what}｜${fmt_(ts, 'M/d HH:mm')}${rule ? '' : generic ? '' : '（新商戶）'}${dupOf ? '（可能重複）' : ''}`);
+    notify_(`🔔 待確認｜${what}｜${fmt_(ts, 'd/M HH:mm')}${rule ? '' : generic ? '' : '（新商戶）'}${dupOf ? '（可能重複）' : ''}`);
   }
   ib.appendRow([id, ts, p.source, text, p.merchant, p.cur, p.amt, hkd, p.date, status, recId, JSON.stringify(suggest)]);
   return { status: status };
