@@ -147,6 +147,7 @@ details.fold>summary h2{margin:0;font-size:19px;font-weight:700;color:var(--ink)
 .tabs::before{content:"";position:absolute;top:3px;bottom:3px;left:3px;width:calc((100% - 6px)/4);border-radius:999px;background:var(--seg-on);
   box-shadow:0 3px 8px rgba(0,0,0,.12),0 3px 1px rgba(0,0,0,.04);transform:translateX(calc(var(--si,1) * 100%));transition:transform .5s var(--spring-b)}
 .tabs.none::before{opacity:0}
+.tabs.dragging::before{transition:none}
 .tab{position:relative;z-index:1;border-radius:999px;font-size:15px;font-weight:500;color:var(--ink);padding:8px 0;transition:color .2s}
 .tab.active{background:none!important;box-shadow:none!important;font-weight:600}
 .text-in{border:0;background:var(--surface-2);border-radius:var(--r-field);padding:12px 15px;font-size:17px;transition:box-shadow .2s}
