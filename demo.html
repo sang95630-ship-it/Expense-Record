@@ -105,7 +105,7 @@ h2{font-size:16px;margin:28px 0 10px}
 #itemGrid{position:relative;will-change:transform;touch-action:pan-y}
 .pager-ghost{position:absolute;top:0;width:100%;pointer-events:none}
 .grid-ghost{display:grid;grid-template-columns:inherit;gap:inherit}
-#expPane{position:relative;will-change:transform;touch-action:pan-y}
+#expPane,#anPane{position:relative;will-change:transform;touch-action:pan-y}
 .chip{display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 4px;border:1.5px solid transparent;background:var(--surface);border-radius:14px;font-size:13px}
 .chip .em{font-size:24px;line-height:1.2}
 .chip.active{border-color:var(--primary);background:var(--surface-2);font-weight:700}
@@ -1343,7 +1343,7 @@ addEventListener('touchstart', e => {
   if (isDesktop() || e.touches.length !== 1 || document.querySelector('.overlay.show')) return;
   const t = e.touches[0];
   if (e.target.closest('input,select,textarea,.wheel,.trend svg,.combo-row')) return; // 避免與輸入及橫向操作衝突
-  if (e.target.closest('#itemGrid,#expPane') && t.clientX > EDGE) return; // 項目格左右拉＝切換類別；只有由螢幕左邊緣拉出才開側欄
+  if (e.target.closest('#itemGrid,#expPane,#anPane') && t.clientX > EDGE) return; // 項目格左右拉＝切換類別；只有由螢幕左邊緣拉出才開側欄
   sw = { x:t.clientX, y:t.clientY, open:sidebar.classList.contains('open'), active:false, pos:0, lx:t.clientX, lt:e.timeStamp, v:0 };
 }, { passive:true });
 addEventListener('touchmove', e => {
@@ -1798,6 +1798,13 @@ $('#expBody').addEventListener('click', e => {
 
 const FOLD_BTN = '<span class="fold-btn" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>';
 /* ---------- 支出明細：按週分組（星期日開始；跨月的週只計本月日子） ---------- */
+const ANMODES = ['section','item'];
+makePager({ root:$('#anBody'), sel:'#anPane', count:ANMODES.length, index:() => Math.max(0, ANMODES.indexOf(S.anMode)),
+  html:j => S.anPane ? S.anPane(ANMODES[j]) : '',
+  commit:j => { S.anMode = ANMODES[j];
+    const pn = $('#anPane'); if (pn && S.anPane) pn.innerHTML = S.anPane(S.anMode);
+    $$('#anBody [data-mode]').forEach(b => b.classList.toggle('active', b.dataset.mode === S.anMode));
+    renderAnalysis(); } });
 const ETABS = ['var','fix','all'];
 makePager({ root:$('#expBody'), sel:'#expPane', count:ETABS.length, index:() => Math.max(0, ETABS.indexOf(S.expTab)),
   html:j => S.expPane ? S.expPane(ETABS[j]) : '',
@@ -1989,14 +1996,20 @@ async function renderAnalysis(){
     const total = sum(rows), ptotal = sum(prev);
     const multi = new Set(); const seen = {};
     rows.forEach(r => { (seen[r.item] ||= new Set()).add(r.section); if (seen[r.item].size > 1) multi.add(r.item); });
-    const g = {};
-    rows.forEach(r => { const k = S.anMode === 'section' ? r.section : (multi.has(r.item) ? `${r.item}（${r.section}）` : r.item); g[k] = (g[k]||0) + r.amount; });
-    let slices = Object.entries(g).sort((a,b) => b[1]-a[1]);
-    if (slices.length > 8) slices = [...slices.slice(0,7), ['其餘', slices.slice(7).reduce((a,x) => a+x[1], 0)]];
+    // 圓餅圖＋圖例（按類別／按項目）；左右拉預覽及切換用
+    const anPane = mode => {
+      const g = {};
+      rows.forEach(r => { const k = mode === 'section' ? r.section : (multi.has(r.item) ? `${r.item}（${r.section}）` : r.item); g[k] = (g[k]||0) + r.amount; });
+      let slices = Object.entries(g).sort((a,b) => b[1]-a[1]);
+      if (slices.length > 8) slices = [...slices.slice(0,7), ['其餘', slices.slice(7).reduce((a,x) => a+x[1], 0)]];
+      const colorOf = (k,i) => mode === 'section' ? secColor(k) : pal()[Math.min(i, 7)];
+      return `${pieSvg(slices, total, colorOf)}
+          <div class="legend">${slices.map(([k,v],i) => `<div><i style="background:${colorOf(k,i)}"></i><span>${esc(k)}</span><span class="num">${money(v)}</span><span class="pct">${(v/total*100).toFixed(1)}%</span></div>`).join('')}</div>`;
+    };
+    S.anPane = anPane;
     const top = [...rows].sort((a,b) => b.amount - a.amount).slice(0,3);
     const delta = ptotal ? (total - ptotal) / ptotal * 100 : null;
     const fixedShare = sum(rows.filter(r => r.section === '固定')) / total * 100;
-    const colorOf = (k,i) => S.anMode === 'section' ? secColor(k) : pal()[Math.min(i, 7)];
     const summ = await loadSummary().catch(() => null);
     const ly = summ?.[shiftYm(S.anYm, -12)], lyTotal = ly ? ORDER.reduce((a,s) => a + (ly[s]||0), 0) : 0;
     const yoy = lyTotal ? (total - lyTotal) / lyTotal * 100 : null;
@@ -2014,8 +2027,7 @@ async function renderAnalysis(){
             <button data-mode="section" class="${S.anMode==='section'?'active':''}">按類別</button>
             <button data-mode="item" class="${S.anMode==='item'?'active':''}">按項目</button>
           </div>
-          ${pieSvg(slices, total, colorOf)}
-          <div class="legend">${slices.map(([k,v],i) => `<div><i style="background:${colorOf(k,i)}"></i><span>${esc(k)}</span><span class="num">${money(v)}</span><span class="pct">${(v/total*100).toFixed(1)}%</span></div>`).join('')}</div>
+          <div class="grid-clip"><div id="anPane">${anPane(S.anMode)}</div></div>
         </div>
         <div class="card list top3">
           <h2 style="margin:10px 0 2px">最大 3 筆支出</h2>
