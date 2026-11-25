@@ -119,6 +119,15 @@ h2{font-size:16px;margin:28px 0 10px}
 .fx-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:14px;color:var(--muted)}
 .fx-row input{width:7.5em;padding:6px 10px;font-variant-numeric:tabular-nums}
 .fx-row b{color:var(--ink);margin-left:auto}
+/* 常用組合：橫向捲動 */
+.combo-row{display:flex;gap:8px;overflow-x:auto;margin:0 -20px 12px;padding:2px 20px;scrollbar-width:none;align-items:center;-webkit-overflow-scrolling:touch}
+.combo-row::-webkit-scrollbar{display:none}
+.combo-lbl{font-size:12px;color:var(--muted);flex-shrink:0}
+.combo{display:flex;align-items:center;gap:8px;flex-shrink:0;border:0;background:var(--surface);border-radius:14px;padding:7px 12px 7px 8px;text-align:left;max-width:200px}
+.combo .em{font-size:20px;line-height:1}
+.combo .tx{font-size:14px;font-weight:500;line-height:1.2;min-width:0}
+.combo small{display:block;font-size:12px;font-weight:400;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px}
+.combo:active{transform:scale(.96)}
 .rm-chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:-4px}
 .rm-chip{border:1px solid var(--line);background:var(--surface-2);border-radius:999px;padding:5px 12px;font-size:13px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rm-chip::before{content:"🕘 ";opacity:.6}
@@ -391,6 +400,7 @@ a{color:inherit}
     <section class="page" id="p-input">
       <div class="demo-banner" role="note"><span>👋</span><div><b>記帳簿 體驗版</b>所有數據都是虛構示範，只存在這個頁面，重新整理即回復原狀。可隨意新增、修改、刪除，亦可試試「📥 待確認」及「🧳 旅程」。</div></div>
       <button class="ib-banner" id="ibBanner" type="button" hidden><span>🔔</span><span id="ibBannerText"></span><span>›</span></button>
+      <div class="combo-row" id="comboRow" hidden></div>
       <div class="tabs" role="tablist">
         <button class="tab" data-s="旅遊">旅遊</button>
         <button class="tab" data-s="日常">日常</button>
@@ -1093,7 +1103,7 @@ $('#menuBtn').addEventListener('click', openDrawer);
 let sw = null;
 addEventListener('touchstart', e => {
   if (isDesktop() || e.touches.length !== 1 || document.querySelector('.overlay.show')) return;
-  if (e.target.closest('input,select,textarea,.wheel,.trend svg')) return; // 避免與輸入及橫向操作衝突
+  if (e.target.closest('input,select,textarea,.wheel,.trend svg,.combo-row')) return; // 避免與輸入及橫向操作衝突
   const t = e.touches[0];
   sw = { x:t.clientX, y:t.clientY, open:sidebar.classList.contains('open'), active:false, pos:0, lx:t.clientX, lt:e.timeStamp, v:0 };
 }, { passive:true });
@@ -1317,6 +1327,38 @@ function undoSave(rec){
   $('#amount').value = withCommas(rec.origAmount); $('#remark').value = rec.remark; updHkd();
   renderRecent(); toast('已復原，可修改後重新儲存');
 }
+/* ---------- 常用組合（方案 A）：按過往紀錄找出最常用的「類別＋項目＋備註」，一按即預選，金額留空待輸入 ----------
+   評分：每筆紀錄 1 分；與現在時段相近（±2 小時）×2；30 日內 ×1.5。最少出現 2 次，顯示最多 5 個。
+   資料來源：本機快取的月份（最多 8 個月）＋未同步紀錄；不計固定支出及分帳產生的紀錄。 */
+const COMBO_MAX = 5;
+function comboList(){
+  const now = new Date(), h = now.getHours(), seen = new Set(), m = {};
+  const rows = [...Object.values(DC.m || {}).flatMap(x => x.rows || []), ...getQ()];
+  rows.forEach(r => {
+    if (!r || seen.has(r.id) || r.section === '固定' || r.fixedId || r.splitId || !r.item) return; seen.add(r.id);
+    const rm = String(r.remark || '').trim(); if (/^https?:\/\//.test(rm)) return;
+    const t = new Date(r.createdAt || r.date), age = (now - t) / 864e5, hh = isNaN(t) ? -9 : t.getHours();
+    const near = Math.min(Math.abs(hh - h), 24 - Math.abs(hh - h)) <= 2;
+    const k = `${r.section}|${r.item}|${rm}`, x = (m[k] ||= { section:r.section, item:r.item, remark:rm, n:0, score:0, cur:r.currency || 'HKD' });
+    x.n++; x.score += (near ? 2 : 1) * (age <= 30 ? 1.5 : 1);
+  });
+  return Object.values(m).filter(x => x.n >= 2 && SECTIONS[x.section]).sort((a,b) => b.score - a.score).slice(0, COMBO_MAX);
+}
+function renderCombos(){
+  const box = $('#comboRow'); if (!box) return;
+  const list = comboList(); S.combos = list; box.hidden = !list.length;
+  box.innerHTML = list.length ? `<span class="combo-lbl">常用</span>` + list.map((c,i) => `<button type="button" class="combo" data-combo="${i}" title="${esc(`${c.section}·${c.item}${c.remark ? '·' + c.remark : ''}，已記 ${c.n} 次`)}">
+    <span class="em">${iconOf(c.section, c.item)}</span><span class="tx">${esc(c.item)}${c.remark ? `<small>${esc(c.remark)}</small>` : ''}</span></button>`).join('') : '';
+}
+$('#comboRow').addEventListener('click', e => {
+  const b = e.target.closest('[data-combo]'); if (!b) return;
+  const c = S.combos[+b.dataset.combo]; if (!c) return;
+  S.section = c.section; S.item = c.item; S.cycle = 'M'; renderTabs();
+  setCur(c.section === '旅遊' ? (tripObj(S.trip)?.currency || lsGet('lastTravelCur', 'HKD')) : 'HKD');
+  $('#remark').value = c.remark; $('#amount').value = ''; updHkd();
+  $('#amount').focus(); keepSaveVisible();
+  try { navigator.vibrate?.(8); } catch(e){}
+});
 async function renderRecent(){
   const box = $('#recentList');
   if (!cfg.url){ box.innerHTML = '<p class="muted small">連結 Google Sheet 後，這裡會顯示本月最近 5 筆支出。</p>'; return; }
@@ -1324,6 +1366,7 @@ async function renderRecent(){
     const rows = await monthRows(todayStr().slice(0,7));
     const list = rows.sort((a,b) => (b.pending|0) - (a.pending|0) || String(b.createdAt).localeCompare(String(a.createdAt))).slice(0,5);
     box.innerHTML = list.length ? list.map(r => recRow(r, false)).join('') : '<p class="muted small">本月未有紀錄。選擇項目並輸入金額即可新增。</p>';
+    renderCombos();
   } catch(e){
     const q = getQ().map(r => ({...r, pending:true})).reverse().slice(0,5);
     box.innerHTML = (q.length ? q.map(r => recRow(r, false)).join('') : '') + `<p class="muted small">${esc(errMsg(e))}</p>`;
