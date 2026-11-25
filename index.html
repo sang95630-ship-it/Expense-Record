@@ -275,6 +275,16 @@ details.wk .rec:last-child{border-bottom:0}
 .trip-card .bar-row{grid-template-columns:72px 1fr auto}
 .trip-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
 .trip-head .ghost{padding:5px 10px}
+/* 旅程卡、短訊原文：與每週明細同一套摺疊動畫 */
+details.trip-card>summary,details.raw>summary{list-style:none;cursor:pointer;-webkit-user-select:none;user-select:none;color:var(--ink);font-size:inherit;margin:0}
+details.trip-card>summary::-webkit-details-marker,details.raw>summary::-webkit-details-marker{display:none}
+.trip-sum{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.trip-sum .num{font-size:18px;font-weight:700}
+.trip-body{padding-top:6px}
+.trip-acts{display:flex;justify-content:flex-end;margin-top:10px}
+details.raw{margin-top:10px}
+details.raw>summary{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+details.raw .fold-btn{width:22px;height:22px}
 .trip-now{display:inline-block;font-size:11px;padding:1px 8px;border-radius:999px;background:var(--warn-bg);color:var(--warn-ink);margin-left:6px;vertical-align:2px}
 .sr-month{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);padding:12px 0 2px;font-weight:500}
 .bar{height:8px;background:var(--soft);border-radius:4px;overflow:hidden}
@@ -1251,11 +1261,10 @@ addEventListener('touchcancel', () => { if (sw?.active){ sidebar.style.transitio
 let holdPg = null;
 function holdPageHeight(){
   const pg = document.querySelector('.page:not([hidden])'); if (!pg) return;
-  clearTimeout(holdRelT); pg.getAnimations?.().forEach(a => { if (a.effect?.getKeyframes?.()[0]?.minHeight) a.cancel(); });
   if (holdPg !== pg){ releasePage(); holdPg = pg; }
   pg.style.minHeight = pg.offsetHeight + 'px';
 }
-function releasePage(){ clearTimeout(holdRelT); if (holdPg){ holdPg.style.minHeight = ''; holdPg.getAnimations?.().forEach(a => a.cancel()); holdPg = null; } }
+function releasePage(){ if (holdPg){ holdPg.style.minHeight = ''; holdPg.getAnimations?.().forEach(a => a.cancel()); holdPg = null; } }
 // 以內容底部量度頁面實際高度（不可先移除 min-height 再量，否則瀏覽器會即時截短捲動位置而跳動）
 function pageNat(pg){
   const last = pg.lastElementChild, cs = getComputedStyle(pg);
@@ -1264,42 +1273,36 @@ function pageNat(pg){
 /* 切換分頁（左右拉或按分段按鈕）後的落點：頁面高度已被撐住，內容已換成新分頁。
    · 若原本已捲過分段按鈕，平滑捲到分段按鈕位於置頂列下方（新分頁由開頭顯示）
    · 落點不超過新分頁的最大可捲範圍；到位後才解除撐住的高度 → 全程只有一段單向、平滑的移動，不會先跳後回 */
-function settleSwap(segSel, paneSel, h0){
-  const pg = holdPg, pane = $(paneSel), seg = $(segSel);
-  if (!pg){ animHeight(pane, h0); return; }
+/* 一次定位：頁面高度已被撐住、內容已變短。計算新內容下可到達的捲動位置（不超過實際可捲範圍），
+   以一段單向、平滑的捲動到位（距離超過 0.6 個畫面時先直接定位，只平滑滑入最後 90px），到位後才解除撐住的高度 → 不會先跳後回 */
+function settleHold(want, jump){ // jump：距離遠時先直接定位（只用於切換分頁，內容本已換掉）
+  const pg = holdPg; if (!pg) return;
   const nat = pageNat(pg), extra = document.documentElement.scrollHeight - pg.offsetHeight; // 頁面以外的高度（置頂列等）
-  const maxS = Math.max(0, nat + extra - innerHeight), tb = ($('.topbar')?.offsetHeight || 0) + 8;
-  let want = scrollY;
-  if (seg){ const r = seg.getBoundingClientRect(); if (r.top < tb) want = scrollY + r.top - tb; }
-  const target = Math.round(Math.min(Math.max(0, want), maxS));
-  animHeight(pane, h0);
+  const maxS = Math.max(0, nat + extra - innerHeight);
+  const target = Math.round(Math.min(Math.max(0, want ?? scrollY), maxS));
   const done = () => { if (holdPg === pg){ pg.style.minHeight = ''; holdPg = null; } };
-  if (Math.abs(target - scrollY) < 2) return void setTimeout(done, 400);
+  if (Math.abs(target - scrollY) < 2) return done();
   if (matchMedia('(prefers-reduced-motion: reduce)').matches){ scrollTo(0, target); return done(); }
   const dist = target - scrollY;
-  if (Math.abs(dist) > innerHeight * .6) scrollTo({ top:target - Math.sign(dist) * 90, behavior:'instant' });
+  if (jump && Math.abs(dist) > innerHeight * .6) scrollTo({ top:target - Math.sign(dist) * 90, behavior:'instant' });
   scrollTo({ top:target, behavior:'smooth' });
   let fin = false; const end = () => { if (fin) return; fin = true; removeEventListener('scrollend', end); setTimeout(done, 30); };
   addEventListener('scrollend', end); setTimeout(end, 900); // scrollend 不支援時的後備
 }
-// 動畫完成後，頁底空白約 1 秒內慢慢收回（min-height 由撐住的高度過渡至實際高度；畫面會緩緩向下移，而非突然跳動）
-let holdRelT;
-function easeRelease(delay = 80){
-  clearTimeout(holdRelT);
-  holdRelT = setTimeout(() => {
-    const pg = holdPg; if (!pg) return; holdPg = null;
-    // 以內容底部量度實際高度（不可先移除 min-height 再量，否則瀏覽器會即時截短捲動位置而跳動）
-    const held = parseFloat(pg.style.minHeight) || 0, nat = pageNat(pg);
-    if (held > nat + 1 && !matchMedia('(prefers-reduced-motion: reduce)').matches){
-      const a = pg.animate({ minHeight:[held + 'px', nat + 'px'] }, { duration:1000, easing:'cubic-bezier(.4,0,.2,1)' });
-      pg.style.minHeight = nat + 'px'; a.onfinish = () => { pg.style.minHeight = ''; };
-    } else pg.style.minHeight = '';
-  }, delay);
+/* 切換分頁（左右拉或按分段按鈕）：若原本已捲過分段按鈕，落點為分段按鈕位於置頂列下方（新分頁由開頭顯示） */
+function settleSwap(segSel, paneSel, h0){
+  const pg = holdPg, pane = $(paneSel), seg = $(segSel);
+  animHeight(pane, h0);
+  if (!pg) return;
+  const tb = ($('.topbar')?.offsetHeight || 0) + 8;
+  let want = scrollY;
+  if (seg){ const r = seg.getBoundingClientRect(); if (r.top < tb) want = scrollY + r.top - tb; }
+  settleHold(want, true);
 }
 const FOLD_OPEN = { duration:300, easing:'cubic-bezier(.2,.8,.2,1)' };
 const FOLD_CLOSE = { duration:260, easing:'cubic-bezier(.4,0,.2,1)' };
 document.addEventListener('click', e => {
-  const s = e.target.closest('details.wk>summary, details.fold>summary'); if (!s) return;
+  const s = e.target.closest('details.wk>summary, details.fold>summary, details.anim>summary'); if (!s) return;
   const d = s.parentElement, body = d.querySelector(':scope>:not(summary)'); e.preventDefault();
   if (matchMedia('(prefers-reduced-motion: reduce)').matches){ d.open = !d.open; return; }
   const opening = !d.open || d.classList.contains('closing');
@@ -1326,9 +1329,10 @@ document.addEventListener('click', e => {
   const base = opening ? FOLD_OPEN : FOLD_CLOSE, dist = Math.abs(to - from);
   const a = d._anim = d.animate({ height:[from + 'px', to + 'px'] }, { ...base, duration:Math.round(Math.min(380, Math.max(200, 160 + dist * .35))) });
   a.onfinish = () => {
-    if (!opening){ d.open = false; d.classList.remove('closing'); d._fade?.cancel(); easeRelease(60); }
+    if (!opening){ d.open = false; d.classList.remove('closing'); d._fade?.cancel(); }
     d.style.height = d.style.overflow = ''; d._anim = d._fade = null;
     document.documentElement.style.overflowAnchor = '';
+    if (!opening) settleHold(); // 收起後一次定位，到位後才解除撐住的高度
   };
 });
 $('#scrim').addEventListener('click', closeDrawer);
@@ -2083,7 +2087,7 @@ async function renderInbox(){
       ${sg.generic ? '' : `<label class="field">以後「${esc(r.merchant)}」<select class="text-in" data-f="remember">
         <option value="auto"${sg.rule ? '' : ' selected'}>自動入帳為此類別</option><option value="ask"${sg.rule ? ' selected' : ''}>每次詢問（預填此類別）</option><option value="">不記住</option></select></label>`}
       <div class="row-btns"><button class="ghost" type="button" data-act="skip">略過</button><button class="ghost" type="button" data-act="split" aria-label="AA 分帳">AA</button><button class="primary" type="button" data-act="ok">確認入帳</button></div>
-      <details><summary>短訊原文</summary><p class="ib-raw">${esc(r.raw)}</p></details>
+      <details class="anim raw"><summary>短訊原文 ${FOLD_BTN}</summary><div><p class="ib-raw">${esc(r.raw)}</p></div></details>
     </div>`;
   }).join('') : '<div class="card"><p class="muted">沒有待確認的消費通知。</p></div>';
   renderRules();
@@ -2176,22 +2180,27 @@ async function renderTrips(){
   if (!S.tfOld) tfReset();
   const box = $('#tripList'); box.innerHTML = '<p class="muted">載入中…</p>';
   const trips = await syncTrips(), today = todayStr();
-  box.innerHTML = trips.length ? trips.map(t => {
+  box.innerHTML = trips.length ? trips.map((t, idx) => {
     const days = t.start ? Math.round((Date.parse(t.end) - Date.parse(t.start)) / 864e5) + 1 : 0;
     const items = Object.entries(t.byItem || {}).sort((a,b) => b[1]-a[1]), mx = items[0]?.[1] || 1;
     const now = t.start && today >= t.start && today <= t.end;
     const fx = Object.entries(t.byCur || {}).map(([c,v]) => curMoney(round2(v), c)).join('、');
-    return `<div class="card trip-card">
-      <div class="trip-head"><div><b>${esc(t.name)}</b>${now ? '<span class="trip-now">進行中</span>' : ''}
+    const open = t.name in S.tripOpen ? S.tripOpen[t.name] : (now || idx === 0); // 預設展開進行中及最近的旅程
+    return `<details class="card trip-card anim" data-trip="${esc(t.name)}"${open ? ' open' : ''}>
+      <summary><div class="trip-head"><div><b>${esc(t.name)}</b>${now ? '<span class="trip-now">進行中</span>' : ''}
         <div class="sub muted small">${t.start ? `${ddmm(t.start)}–${ddmm(t.end)}，${days} 日` : '只見於紀錄（未設日期）'}${t.currency ? `，${t.currency}` : ''}</div></div>
-        ${t.start ? `<button class="ghost" type="button" data-tedit="${esc(t.name)}">修改</button>` : ''}</div>
-      <div class="total">${money(round2(t.total || 0))}</div>
-      <div class="sub muted small">${t.count || 0} 筆${days && t.total ? `，每日平均 ${money(round2(t.total / days))}` : ''}${fx ? `，外幣 ${fx}` : ''}</div>
-      ${spTripInfo(t.name)}
-      ${items.slice(0,6).map(([k,v]) => `<div class="bar-row"><span>${esc(k)}</span><span class="bar"><i style="width:${v/mx*100}%;background:${secColor('旅遊')}"></i></span><span class="num">${money(round2(v))}</span></div>`).join('')}
-    </div>`;
+        <div class="trip-sum"><span class="num">${money(round2(t.total || 0))}</span>${FOLD_BTN}</div></div></summary>
+      <div class="trip-body">
+        <div class="sub muted small">${t.count || 0} 筆${days && t.total ? `，每日平均 ${money(round2(t.total / days))}` : ''}${fx ? `，外幣 ${fx}` : ''}</div>
+        ${spTripInfo(t.name)}
+        ${items.slice(0,6).map(([k,v]) => `<div class="bar-row"><span>${esc(k)}</span><span class="bar"><i style="width:${v/mx*100}%;background:${secColor('旅遊')}"></i></span><span class="num">${money(round2(v))}</span></div>`).join('')}
+        ${t.start ? `<div class="trip-acts"><button class="ghost" type="button" data-tedit="${esc(t.name)}">修改旅程</button></div>` : ''}
+      </div>
+    </details>`;
   }).join('') : '<div class="card"><p class="muted">未有旅程。在上方輸入名稱及日期即可新增。</p></div>';
 }
+S.tripOpen = {}; // 本次使用期間手動展開／收起的旅程卡
+$('#tripList').addEventListener('toggle', e => { if (e.target.dataset?.trip) S.tripOpen[e.target.dataset.trip] = e.target.open; }, true);
 $('#tripList').addEventListener('click', e => { const b = e.target.closest('[data-tedit]'); if (!b) return; tfReset(tripObj(b.dataset.tedit)); scrollTo({top:0, behavior:'smooth'}); });
 $('#tfCancel').addEventListener('click', () => tfReset());
 $('#tfSave').addEventListener('click', async () => {
