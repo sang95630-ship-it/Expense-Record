@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""由 index.html 產生單一檔案的體驗版 demo.html（可直接傳送或放上 GitHub Pages）。
+"""由 index.html（預設的新設計，先執行 build_next.py）產生單一檔案的體驗版 demo.html（可直接傳送或放上 GitHub Pages）。
 
 用法：python3 tools/build_demo.py
 - 嵌入 tools/demo-mock.js：頁內模擬伺服器＋虛構示範數據，資料只存在記憶體
 - 移除 PWA（manifest、圖示、Service Worker）及設定頁的連結表單
-- 每次修改 index.html 後重新執行，令體驗版保持最新
+- 每次修改 classic.html → build_next.py 後重新執行，令體驗版保持最新
 """
 from pathlib import Path
 
 import sys
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC, OUT = (sys.argv[1:3] + ['index.html', 'demo.html'][len(sys.argv[1:3]):])  # 可選：來源及輸出，例如 next.html next-demo.html
+SRC, OUT = (sys.argv[1:3] + ['index.html', 'demo.html'][len(sys.argv[1:3]):])  # 可選：來源及輸出，例如 classic.html classic-demo.html
 src = (ROOT / SRC).read_text(encoding='utf-8')
 mock = (ROOT / 'tools' / 'demo-mock.js').read_text(encoding='utf-8')
 

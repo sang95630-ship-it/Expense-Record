@@ -8,7 +8,7 @@
 ## 專案目標
 個人用（暫時只有自己用）的消費紀錄網頁：
 - 手機／電腦輸入支出 → 自動寫入指定 Google Sheet → 長期紀錄及分析消費習慣
-- 前端：GitHub Pages（靜態 index.html，無 build step）
+- 前端：GitHub Pages（靜態 HTML，無 build step）。**程式碼來源是 `classic.html`（經典版，後備）**；`index.html`（預設的新設計）及 `demo.html` 由它產生：修改 `classic.html` 後執行 `python3 tools/build_next.py && python3 tools/build_demo.py`，三個檔案一併 commit
 - 後端：Google Apps Script Web App（Code.gs，綁定在 Google Sheet 內）
 
 ## 架構決定（已確認）
@@ -74,15 +74,16 @@
 | + | 主畫面長按捷徑（manifest `shortcuts`）：記早餐／午餐／晚餐（`?s=日常&i=…`，直接聚焦金額）、待確認（`?p=inbox`）；圖示 `sc-*.png`；`sw.js` VERSION 升至 v2 | ✅ |
 | + | PWA：`manifest.json` + `sw.js`（index.html 網絡優先、其他靜態檔快取優先、Google Fonts SWR；GAS／匯率 API 不快取）；圖示 `icon.svg`／`icon-192/512.png`／`icon-maskable-512.png`／`apple-touch-icon.png` | ✅ |
 
-## 新設計（next.html，試用中）
+## 介面版本（新設計為預設）
+- `index.html`＝新設計（預設，PWA 主畫面及捷徑打開此頁）；`classic.html`＝經典版（後備，亦是程式碼來源）；`next.html` 只會轉址到 `./`（保留舊書籤）
+- 兩版設定頁頂部互相連結：新設計「↩︎ 改用經典版」、經典版「✨ 改用新設計（預設）」；資料、TOKEN、佇列共用
+- `sw.js` VERSION v3（SHELL 加入 classic.html）
 - 第二版（參考 iOS 26 Liquid Glass）：控制層玻璃材質（半透明＋模糊＋飽和＋邊緣高光）、懸浮膠囊分頁列（透鏡以彈簧滑動，下捲縮細）、同心圓角（卡片 22px／欄位 14px／按鈕膠囊）、頁頂環境光、類別分段控制滑塊、表單頁懸浮彈出、彈簧曲線（CSS `linear()`，阻尼彈簧取樣）、頁面淡入上移、按壓縮放、Android 觸感回饋；強調色 6 選 1（設定頁，localStorage `uiTint`）；系統「減少動態效果」時停用動畫
 - 參考 Apple Human Interface Guidelines：系統字體、iOS 大標題模式（`#largeTitle` 屬內容層隨頁捲走並縮小淡出，越過門檻（>36px 收起、<24px 展開，設回差）切換 `.collapsed`，大標題淡出、置頂列居中小標題及玻璃背景以固定時間淡入，不受捲動速度影響）、分組列表、iOS 分段控制、圓角圖示格、膠囊提示、表單頁拉柄；手機以底部分頁列（記帳／概覽／分析／分帳／更多）導覽，「更多」打開側欄；電腦為淺色側欄
-- `python3 tools/build_next.py` 由 index.html 產生 `next.html`：只覆蓋 CSS 及加入分頁列，功能、資料、localStorage 完全共用；**修改 index.html 後須重新執行並一併 commit**
-- 經典版設定頁頂部「✨ 試用新設計」連到 next.html；新設計同一位置為「↩︎ 返回經典版」
-- 體驗版：`python3 tools/build_demo.py next.html next-demo.html`
+- `python3 tools/build_next.py` 由 classic.html 產生 `index.html`：只覆蓋 CSS、加入分頁列及大標題，功能、資料、localStorage 完全共用
 
 ## 體驗版（demo.html）
-- 供分享給他人一次性體驗的單一 HTML：`python3 tools/build_demo.py` 由 index.html 產生 `demo.html`，**修改 index.html 後須重新執行並一併 commit**
+- 供分享給他人一次性體驗的單一 HTML：`python3 tools/build_demo.py` 由 index.html（新設計）產生 `demo.html`；經典版體驗檔可用 `python3 tools/build_demo.py classic.html classic-demo.html`（未納入 repo）
 - `tools/demo-mock.js`：頁內模擬伺服器（攔截 fetch，實作所有 GET／POST action）＋虛構示範數據（近 6 個月紀錄、5 個固定項目、東京旅程、2 筆待確認）；匯率用固定值
 - 以記憶體取代 localStorage／sessionStorage：不會讀寫正式版的設定、TOKEN 或佇列（即使在同一網域開啟），重新整理即重設
 - 移除 PWA（manifest、圖示、Service Worker），隱藏 Details、連結表單、首次設定步驟及同步狀態；頁頂顯示體驗版說明
@@ -115,13 +116,13 @@
 2. 專案設定：時區 Asia/Hong_Kong；指令碼屬性新增 `TOKEN`；Sheet「檔案 → 設定」時區亦同
 3. 執行 `setup()` 一次（建表 + 每月 1 號 01:00 `monthlyJob` + 每週日 03:00 `weeklyBackup` + 每小時 `watchdog` trigger；需授權 Drive 及外部連線）；可選：指令碼屬性加 `SIGNAL_UUID`／`SIGNAL_APIKEY` 後執行 `testSignal`
 4. 部署 → 網頁應用程式（我／所有人）→ 取得 `/exec` URL
-5. index.html 推上 GitHub repo → Settings → Pages
+5. index.html／classic.html 等推上 GitHub repo → Settings → Pages
 6. 網頁「設定」頁貼上 URL + TOKEN
-- 注意：修改 Code.gs 後須「管理部署作業 → 編輯 → 新版本」才生效；改了 `API_VERSION` 須同步改 index.html 內的 `API_VERSION`
+- 注意：修改 Code.gs 後須「管理部署作業 → 編輯 → 新版本」才生效；改了 `API_VERSION` 須同步改 classic.html 內的 `API_VERSION`（再重新產生 index.html）
 - TOKEN 外洩：改指令碼屬性 `TOKEN` → 網頁設定頁輸入新 TOKEN（手機轉發器亦要更新），毋須重新部署
 
 ## 已知限制
-- 修改圖示／manifest 等靜態檔後，須把 `sw.js` 的 `VERSION` 加 1，否則手機會繼續用舊快取（index.html 不受影響）
+- 修改圖示／manifest 等靜態檔後，須把 `sw.js` 的 `VERSION` 加 1，否則手機會繼續用舊快取（HTML 頁面網絡優先，不受影響）
 - 固定項目只從輸入月份的「下個月」起自動新增，補登過往月份不會回補
 - GAS 每次讀寫約 1–3 秒延遲（讀取已由本機快取遮蓋：第二次起打開約 20ms 顯示）
 

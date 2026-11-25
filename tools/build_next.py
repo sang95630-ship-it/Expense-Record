@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""由 index.html（經典版）產生 next.html（新設計，參考 Apple Human Interface Guidelines 及 iOS 26 Liquid Glass）。
+"""由 classic.html（經典版，亦是程式碼來源）產生 index.html（預設的新設計，參考 Apple Human Interface Guidelines 及 iOS 26 Liquid Glass）。
 
 用法：python3 tools/build_next.py
 - 功能及資料完全共用：同一份程式碼、同一個 localStorage（TOKEN、佇列、快取），兩個版本可隨時切換
@@ -9,12 +9,12 @@
   · 色彩：系統背景色階＋可選強調色（鋼藍／藍／靛／青／粉紅／石墨，設定頁選擇，localStorage uiTint）
   · 動態：彈簧曲線（CSS linear() 以阻尼彈簧計算）；頁面淡入上移、分段控制滑塊、分頁列透鏡滑動、下捲縮細、表單頁彈出、按壓縮放；
     Android 觸感回饋（navigator.vibrate）；系統「減少動態效果」時全部停用
-- 每次修改 index.html 後重新執行，令新設計保持最新
+- 每次修改 classic.html 後重新執行，令新設計保持最新
 """
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-s = (ROOT / 'index.html').read_text(encoding='utf-8')
+s = (ROOT / 'classic.html').read_text(encoding='utf-8')
 
 
 def sub(old, new, count=1):
@@ -32,8 +32,8 @@ sub('<title>記帳簿</title>', '<title>記帳簿</title>\n<script>try{document.
 TINTS = [('steel', '鋼藍', '#2F6F94'), ('blue', '藍', '#007AFF'), ('indigo', '靛', '#5856D6'),
          ('teal', '青', '#1A8CA6'), ('pink', '粉紅', '#D3264F'), ('graphite', '石墨', '#5B5B60')]
 tint_btns = ''.join(f'<button type="button" class="tint-dot" data-tint="{k}" style="--c:{c}" aria-label="{n}"><i></i><span>{n}</span></button>' for k, n, c in TINTS)
-sub('<a class="ui-switch" id="uiSwitch" href="next.html"><span>✨</span><span><b>試用新設計</b><small>參考 Apple 設計語言，可隨時返回</small></span><span>›</span></a>',
-    '<a class="ui-switch" id="uiSwitch" href="index.html"><span>↩︎</span><span><b>返回經典版</b><small>資料共用，切換不會遺失任何紀錄</small></span><span>›</span></a>\n'
+sub('<a class="ui-switch" id="uiSwitch" href="./"><span>✨</span><span><b>改用新設計（預設）</b><small>經典版為後備版本，資料共用</small></span><span>›</span></a>',
+    '<a class="ui-switch" id="uiSwitch" href="classic.html"><span>↩︎</span><span><b>改用經典版</b><small>後備版本，資料共用，可隨時切換回來</small></span><span>›</span></a>\n'
     f'      <div class="card tint-card" id="tintCard"><div class="tint-h">強調色</div><div class="tint-row" id="tintRow">{tint_btns}</div></div>')
 
 # 彈簧曲線：阻尼彈簧 x(t)（SwiftUI .spring(duration:, bounce:) 同一模型）取樣成 CSS linear()
@@ -339,5 +339,5 @@ JS = r"""
 """
 sub('</body>', JS + '</body>')
 
-(ROOT / 'next.html').write_text(s, encoding='utf-8')
-print(f'已產生 next.html（{len(s.encode("utf-8")) // 1024} KB）')
+(ROOT / 'index.html').write_text(s, encoding='utf-8')
+print(f'已產生 index.html（{len(s.encode("utf-8")) // 1024} KB）')
