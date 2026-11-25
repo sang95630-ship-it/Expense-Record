@@ -1469,22 +1469,29 @@ addEventListener('touchcancel', () => { if (sw?.active){ sidebar.style.transitio
    · 動畫中途可反轉；系統「減少動態效果」時不播放 */
 /* 保持頁面高度：內容變短（收起長清單、切換到較短分頁）時，暫時以 min-height 撐住目前頁面，
    令畫面內容原位不動、不會因頁底被截而向下移；多出的空位只在頁底，向上捲時隨即收回（看不到變化），換頁或重畫時解除 */
-let holdPg = null, holdAt = 0;
+let holdPg = null;
 function holdPageHeight(){
   const pg = document.querySelector('.page:not([hidden])'); if (!pg) return;
+  clearTimeout(holdRelT); pg.getAnimations?.().forEach(a => { if (a.effect?.getKeyframes?.()[0]?.minHeight) a.cancel(); });
   if (holdPg !== pg){ releasePage(); holdPg = pg; }
-  pg.style.minHeight = pg.offsetHeight + 'px'; holdAt = performance.now();
+  pg.style.minHeight = pg.offsetHeight + 'px';
 }
-function releasePage(){ if (holdPg){ holdPg.style.minHeight = ''; holdPg = null; } }
-let holdT = false;
-addEventListener('scroll', () => {
-  if (!holdPg || holdT || performance.now() - holdAt < 700) return; holdT = true; // 動畫期間不調整
-  requestAnimationFrame(() => { holdT = false; if (!holdPg) return;
-    const need = Math.ceil(innerHeight - holdPg.getBoundingClientRect().top); // 剛好填滿至螢幕底
-    holdPg.style.minHeight = ''; const nat = holdPg.offsetHeight;
-    if (nat >= need) releasePage(); else holdPg.style.minHeight = need + 'px';
-  });
-}, { passive:true });
+function releasePage(){ clearTimeout(holdRelT); if (holdPg){ holdPg.style.minHeight = ''; holdPg.getAnimations?.().forEach(a => a.cancel()); holdPg = null; } }
+// 動畫完成後，頁底空白約 1 秒內慢慢收回（min-height 由撐住的高度過渡至實際高度；畫面會緩緩向下移，而非突然跳動）
+let holdRelT;
+function easeRelease(delay = 80){
+  clearTimeout(holdRelT);
+  holdRelT = setTimeout(() => {
+    const pg = holdPg; if (!pg) return; holdPg = null;
+    // 以內容底部量度實際高度（不可先移除 min-height 再量，否則瀏覽器會即時截短捲動位置而跳動）
+    const held = parseFloat(pg.style.minHeight) || 0, last = pg.lastElementChild, cs = getComputedStyle(pg);
+    const nat = last ? Math.ceil(last.getBoundingClientRect().bottom + parseFloat(getComputedStyle(last).marginBottom) - pg.getBoundingClientRect().top + parseFloat(cs.paddingBottom) + parseFloat(cs.borderBottomWidth)) : 0;
+    if (held > nat + 1 && !matchMedia('(prefers-reduced-motion: reduce)').matches){
+      const a = pg.animate({ minHeight:[held + 'px', nat + 'px'] }, { duration:1000, easing:'cubic-bezier(.4,0,.2,1)' });
+      pg.style.minHeight = nat + 'px'; a.onfinish = () => { pg.style.minHeight = ''; };
+    } else pg.style.minHeight = '';
+  }, delay);
+}
 const FOLD_OPEN = { duration:300, easing:'cubic-bezier(.2,.8,.2,1)' };
 const FOLD_CLOSE = { duration:260, easing:'cubic-bezier(.4,0,.2,1)' };
 document.addEventListener('click', e => {
@@ -1515,7 +1522,7 @@ document.addEventListener('click', e => {
   const base = opening ? FOLD_OPEN : FOLD_CLOSE, dist = Math.abs(to - from);
   const a = d._anim = d.animate({ height:[from + 'px', to + 'px'] }, { ...base, duration:Math.round(Math.min(380, Math.max(200, 160 + dist * .35))) });
   a.onfinish = () => {
-    if (!opening){ d.open = false; d.classList.remove('closing'); d._fade?.cancel(); }
+    if (!opening){ d.open = false; d.classList.remove('closing'); d._fade?.cancel(); easeRelease(60); }
     d.style.height = d.style.overflow = ''; d._anim = d._fade = null;
     document.documentElement.style.overflowAnchor = '';
   };
@@ -1919,7 +1926,7 @@ $('#expBody').addEventListener('toggle', e => {
 $('#expBody').addEventListener('click', e => { if (e.target.closest('[data-goto="splits"]')) return go('splits'); });
 $('#expBody').addEventListener('click', e => {
   const ed = e.target.closest('[data-edit]'), fx = e.target.closest('[data-fx]'), et = e.target.closest('[data-etab]');
-  if (et){ holdPageHeight(); const h0 = $('#expPane')?.offsetHeight; S.expTab = et.dataset.etab; lsSet('expTab', S.expTab); return renderExpense().then(() => animHeight($('#expPane'), h0)); }
+  if (et){ holdPageHeight(); const h0 = $('#expPane')?.offsetHeight; S.expTab = et.dataset.etab; lsSet('expTab', S.expTab); return renderExpense().then(() => { animHeight($('#expPane'), h0); easeRelease(420); }); }
   if (ed) openRec(ed.dataset.edit);
   if (fx) openFixed(fx.dataset.fx);
 });
@@ -1932,14 +1939,14 @@ makePager({ root:$('#anBody'), sel:'#anPane', count:ANMODES.length, index:() => 
   commit:j => { holdPageHeight(); S.anMode = ANMODES[j];
     const pn = $('#anPane'); if (pn && S.anPane) pn.innerHTML = S.anPane(S.anMode);
     $$('#anBody [data-mode]').forEach(b => b.classList.toggle('active', b.dataset.mode === S.anMode));
-    const h0 = pn?.offsetHeight; renderAnalysis().then(() => animHeight($('#anPane'), h0)); } });
+    const h0 = pn?.offsetHeight; renderAnalysis().then(() => { animHeight($('#anPane'), h0); easeRelease(420); }); } });
 const ETABS = ['var','fix','all'];
 makePager({ root:$('#expBody'), sel:'#expPane', count:ETABS.length, index:() => Math.max(0, ETABS.indexOf(S.expTab)),
   html:j => S.expPane ? S.expPane(ETABS[j]) : '',
   commit:j => { holdPageHeight(); S.expTab = ETABS[j]; lsSet('expTab', S.expTab);
     const pn = $('#expPane'); if (pn && S.expPane) pn.innerHTML = S.expPane(S.expTab);
     $$('#expBody [data-etab]').forEach(b => { const on = b.dataset.etab === S.expTab; b.classList.toggle('active', on); b.setAttribute('aria-selected', on); });
-    const h0 = pn?.offsetHeight; renderExpense().then(() => animHeight($('#expPane'), h0)); } });
+    const h0 = pn?.offsetHeight; renderExpense().then(() => { animHeight($('#expPane'), h0); easeRelease(420); }); } });
 S.expTab = (() => { try { return JSON.parse(localStorage.getItem('expTab')) || 'var'; } catch(e){ return 'var'; } })();
 S.wkOpen = {}; // 本次使用期間手動展開／收起的週（key = 月份|週首日）
 function weekGroups(rows, showFix){
@@ -2229,7 +2236,7 @@ function trendHtml(summ){
 }
 $('#anBody').addEventListener('click', e => {
   const b = e.target.closest('[data-mode]'), tn = e.target.closest('[data-tn]'), bar = e.target.closest('[data-ym]');
-  if (b){ holdPageHeight(); const h0 = $('#anPane')?.offsetHeight; S.anMode = b.dataset.mode; renderAnalysis().then(() => animHeight($('#anPane'), h0)); }
+  if (b){ holdPageHeight(); const h0 = $('#anPane')?.offsetHeight; S.anMode = b.dataset.mode; renderAnalysis().then(() => { animHeight($('#anPane'), h0); easeRelease(420); }); }
   if (tn){ S.trendN = Number(tn.dataset.tn); renderAnalysis(); }
   if (bar && bar.dataset.ym !== S.anYm){ S.anYm = bar.dataset.ym; renderAnalysis(); scrollTo({top:0, behavior:'smooth'}); }
 });
