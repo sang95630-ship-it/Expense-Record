@@ -84,20 +84,24 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
   -webkit-backdrop-filter:blur(22px) saturate(190%);backdrop-filter:blur(22px) saturate(190%)}
 
 /* ---- 置頂列（iOS 大標題模式）----
-   大標題（#largeTitle）屬內容層，隨頁面自然向上捲走並輕微縮小淡出；置頂列中央的小標題及玻璃背景按捲動距離（--tp，0→1）連續淡入。
+   大標題（#largeTitle）屬內容層，隨頁面自然向上捲走；越過門檻（捲到置頂列之下）時切換 .collapsed：大標題淡出、置頂列小標題及玻璃背景淡入。
+   淡入淡出以固定時間播放（與捲動速度無關），門檻設有回差（>36px 收起、<24px 展開），避免在門檻附近來回閃動。
    全程跟隨手指，沒有突然切換的字級或對齊，因此轉換順滑 */
 .topbar{display:grid;grid-template-columns:44px 1fr 44px;align-items:center;gap:0;background:transparent;box-shadow:none;max-width:none;
   padding:calc(6px + env(safe-area-inset-top,0px)) 12px 6px;min-height:calc(50px + env(safe-area-inset-top,0px));isolation:isolate}
 .topbar::before{content:"";position:absolute;inset:0;z-index:-1;background:var(--glass);box-shadow:0 .5px 0 var(--line);
-  -webkit-backdrop-filter:blur(22px) saturate(190%);backdrop-filter:blur(22px) saturate(190%);opacity:var(--tp,0)}
-.topbar h1,.topbar.compact h1{grid-column:2;font-size:17px;font-weight:600;justify-content:center;text-align:center;opacity:var(--tt,0);
-  transform:translateY(calc((1 - var(--tt,0)) * 6px))}
+  -webkit-backdrop-filter:blur(22px) saturate(190%);backdrop-filter:blur(22px) saturate(190%);opacity:0;transition:opacity .3s ease}
+.topbar.collapsed::before{opacity:1}
+.topbar h1,.topbar.compact h1{grid-column:2;font-size:17px;font-weight:600;justify-content:center;text-align:center;opacity:0;
+  transform:translateY(8px);transition:opacity .22s ease,transform .22s ease}
+.topbar.collapsed h1{opacity:1;transform:none;transition:opacity .34s ease .06s,transform .5s var(--spring-b) .06s}
 .topbar .tb-tx,.topbar.compact .tb-tx{display:inline} .topbar .tb-ic,.topbar.compact .tb-ic{display:none!important}
 .topbar #menuBtn{grid-column:1}
 .topbar .sync-btn{grid-column:3;justify-self:end}
 #syncState{position:absolute;right:58px;top:calc(50% + env(safe-area-inset-top,0px)/2);transform:translateY(-50%);font-size:12px}
 .large-title{font-size:34px;font-weight:700;letter-spacing:.005em;line-height:1.15;margin:0 20px 10px;max-width:720px;
-  transform-origin:left bottom;transform:scale(calc(1 - var(--tp,0) * .06));opacity:calc(1 - var(--tp,0) * 1.6)}
+  transform-origin:left bottom;transition:opacity .3s ease,transform .45s var(--spring)}
+.large-title.collapsed{opacity:0;transform:scale(.96)}
 .sync-btn{width:36px;height:36px;padding:3px;background:var(--glass);border:.5px solid var(--glass-edge);box-shadow:var(--glass-shadow);transition:transform .4s var(--spring-b)}
 .sync-btn svg circle{fill:transparent} .sync-btn .ar{stroke:var(--primary);stroke-width:40} .sync-btn .ah{fill:var(--primary)}
 .sync-btn:active{transform:scale(.88)}
@@ -107,7 +111,7 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
 
 /* ---- 頁面切換：淡入上移；子區塊依次出現 ---- */
 .page:not([hidden]){animation:pageIn .5s var(--ease-out) backwards}
-.large-title.swap{animation:riseIn .5s var(--ease-out) backwards}
+.large-title.swap:not(.collapsed){animation:riseIn .5s var(--ease-out) backwards}
 .page:not([hidden])>*{animation:riseIn .55s var(--ease-out) backwards}
 .page:not([hidden])>*:nth-child(2){animation-delay:.03s} .page:not([hidden])>*:nth-child(3){animation-delay:.06s}
 .page:not([hidden])>*:nth-child(4){animation-delay:.09s} .page:not([hidden])>*:nth-child(n+5){animation-delay:.12s}
@@ -293,13 +297,12 @@ JS = r"""
     bar.querySelectorAll('.tb-item').forEach(b => b.classList.toggle('active', b.dataset.tb === cur));
     bar.style.setProperty('--ti', MAIN.indexOf(cur));
   };
-  // 大標題：按捲動距離連續計算 --tp（大標題縮小淡出、玻璃背景淡入）及 --tt（小標題淡入），每格畫面更新一次
+  // 大標題：越過門檻才切換狀態，淡入淡出以固定時間播放（不受捲動速度影響）；回差避免來回閃動
   const top = document.querySelector('.topbar'), lt = document.getElementById('largeTitle');
-  let tick = false;
+  let tick = false, col = false;
   const titleScroll = () => { tick = false; const y = Math.max(0, scrollY);
-    top.style.setProperty('--tp', Math.min(1, y / 44).toFixed(3));
-    top.style.setProperty('--tt', Math.min(1, Math.max(0, (y - 30) / 20)).toFixed(3));
-    lt.style.setProperty('--tp', Math.min(1, y / 44).toFixed(3)); };
+    const next = col ? y > 24 : y > 36; if (next === col) return; col = next;
+    top.classList.toggle('collapsed', col); lt.classList.toggle('collapsed', col); };
   addEventListener('scroll', () => { if (!tick){ tick = true; requestAnimationFrame(titleScroll); } }, { passive:true });
   const _go = go; go = function(p){ _go(p); mark(); bar.classList.remove('mini'); lt.textContent = TITLES[p] || '';
     lt.classList.remove('swap'); void lt.offsetWidth; lt.classList.add('swap'); titleScroll(); };

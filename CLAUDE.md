@@ -76,7 +76,7 @@
 
 ## 新設計（next.html，試用中）
 - 第二版（參考 iOS 26 Liquid Glass）：控制層玻璃材質（半透明＋模糊＋飽和＋邊緣高光）、懸浮膠囊分頁列（透鏡以彈簧滑動，下捲縮細）、同心圓角（卡片 22px／欄位 14px／按鈕膠囊）、頁頂環境光、類別分段控制滑塊、表單頁懸浮彈出、彈簧曲線（CSS `linear()`，阻尼彈簧取樣）、頁面淡入上移、按壓縮放、Android 觸感回饋；強調色 6 選 1（設定頁，localStorage `uiTint`）；系統「減少動態效果」時停用動畫
-- 參考 Apple Human Interface Guidelines：系統字體、iOS 大標題模式（`#largeTitle` 屬內容層隨頁捲走並縮小淡出，置頂列居中小標題及玻璃背景按捲動距離 `--tp`／`--tt` 連續淡入，不再以 class 切換字級）、分組列表、iOS 分段控制、圓角圖示格、膠囊提示、表單頁拉柄；手機以底部分頁列（記帳／概覽／分析／分帳／更多）導覽，「更多」打開側欄；電腦為淺色側欄
+- 參考 Apple Human Interface Guidelines：系統字體、iOS 大標題模式（`#largeTitle` 屬內容層隨頁捲走並縮小淡出，越過門檻（>36px 收起、<24px 展開，設回差）切換 `.collapsed`，大標題淡出、置頂列居中小標題及玻璃背景以固定時間淡入，不受捲動速度影響）、分組列表、iOS 分段控制、圓角圖示格、膠囊提示、表單頁拉柄；手機以底部分頁列（記帳／概覽／分析／分帳／更多）導覽，「更多」打開側欄；電腦為淺色側欄
 - `python3 tools/build_next.py` 由 index.html 產生 `next.html`：只覆蓋 CSS 及加入分頁列，功能、資料、localStorage 完全共用；**修改 index.html 後須重新執行並一併 commit**
 - 經典版設定頁頂部「✨ 試用新設計」連到 next.html；新設計同一位置為「↩︎ 返回經典版」
 - 體驗版：`python3 tools/build_demo.py next.html next-demo.html`
