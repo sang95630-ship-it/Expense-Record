@@ -100,6 +100,15 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
 .topbar .tb-tx,.topbar.compact .tb-tx{display:inline} .topbar .tb-ic,.topbar.compact .tb-ic{display:none!important}
 .topbar #menuBtn{grid-column:1}
 .topbar .sync-btn{grid-column:3;justify-self:end}
+/* 待確認小鈴鐺：在同步按鈕左邊（玻璃圓鈕＋紅色數字）；出現時大標題及同步狀態向左讓位 */
+.topbar .bell-btn{position:absolute;right:58px;top:calc(7px + env(safe-area-inset-top,0px));background:var(--glass);border:.5px solid var(--glass-edge);
+  box-shadow:var(--glass-shadow);transition:transform .4s var(--spring-b)}
+.topbar .bell-btn:active{transform:scale(.88)}
+.topbar .bell-btn:not([hidden]){animation:bellIn .5s var(--spring-b)}
+@keyframes bellIn{0%{transform:scale(.6);opacity:0}100%{transform:none;opacity:1}}
+.topbar.compact .bell-btn{right:48px;top:calc(11px + env(safe-area-inset-top,0px))}
+:root:has(#ibBell:not([hidden])) .large-title{margin-right:108px}
+.topbar:has(#ibBell:not([hidden])) #syncState{right:102px}
 #syncState{position:absolute;right:58px;top:calc(50% + env(safe-area-inset-top,0px)/2);transform:translateY(-50%);font-size:12px}
 .large-title{font-size:34px;font-weight:700;letter-spacing:.005em;line-height:1.15;margin:calc(-45px - env(safe-area-inset-top,0px)) 64px 12px 20px;
   padding-top:env(safe-area-inset-top,0px);max-width:720px;position:relative;z-index:0;pointer-events:none; /* 與同步按鈕同一行：上移至置頂列內，右邊留位給按鈕 */

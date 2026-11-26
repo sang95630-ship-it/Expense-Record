@@ -82,8 +82,16 @@ main{flex:1;min-width:0;display:flex;flex-direction:column;padding-bottom:env(sa
 .topbar.compact .tb-tx{display:none}
 .topbar.compact .tb-ic{display:inline}
 .topbar.compact .sync-btn{width:28px;height:28px}
+.topbar.compact .bell-btn{width:28px;height:28px;padding:4px}
+.topbar.compact .bell-btn svg{width:18px;height:18px}
+.topbar.compact .bell-n{top:-5px;right:-7px}
 .topbar.compact .icon-btn{width:32px;height:32px;font-size:17px}
 #syncState{font-size:12px;color:var(--muted);text-align:right}
+.bell-btn{position:relative;border:0;background:none;padding:6px;width:36px;height:36px;border-radius:50%;flex-shrink:0;color:var(--primary);cursor:pointer}
+.bell-btn[hidden]{display:none}
+.bell-btn svg{width:22px;height:22px;display:block;margin:auto;fill:currentColor}
+.bell-n{position:absolute;top:-3px;right:-5px;min-width:18px;height:18px;padding:0 5px;box-sizing:border-box;border-radius:9px;background:#FF3B30;color:#fff;
+  font-size:11px;font-weight:700;line-height:18px;text-align:center;box-shadow:0 0 0 2px var(--bg,#fff)}
 .sync-btn{border:0;background:none;padding:0;width:36px;height:36px;border-radius:50%;flex-shrink:0;color:var(--primary);transition:width .2s,height .2s}
 .sync-btn svg{width:100%;height:100%;display:block}
 .sync-btn .ar{fill:none;stroke:var(--primary-ink);stroke-width:44;stroke-linecap:round}
@@ -522,6 +530,15 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
 .topbar .tb-tx,.topbar.compact .tb-tx{display:inline} .topbar .tb-ic,.topbar.compact .tb-ic{display:none!important}
 .topbar #menuBtn{grid-column:1}
 .topbar .sync-btn{grid-column:3;justify-self:end}
+/* 待確認小鈴鐺：在同步按鈕左邊（玻璃圓鈕＋紅色數字）；出現時大標題及同步狀態向左讓位 */
+.topbar .bell-btn{position:absolute;right:58px;top:calc(7px + env(safe-area-inset-top,0px));background:var(--glass);border:.5px solid var(--glass-edge);
+  box-shadow:var(--glass-shadow);transition:transform .4s var(--spring-b)}
+.topbar .bell-btn:active{transform:scale(.88)}
+.topbar .bell-btn:not([hidden]){animation:bellIn .5s var(--spring-b)}
+@keyframes bellIn{0%{transform:scale(.6);opacity:0}100%{transform:none;opacity:1}}
+.topbar.compact .bell-btn{right:48px;top:calc(11px + env(safe-area-inset-top,0px))}
+:root:has(#ibBell:not([hidden])) .large-title{margin-right:108px}
+.topbar:has(#ibBell:not([hidden])) #syncState{right:102px}
 #syncState{position:absolute;right:58px;top:calc(50% + env(safe-area-inset-top,0px)/2);transform:translateY(-50%);font-size:12px}
 .large-title{font-size:34px;font-weight:700;letter-spacing:.005em;line-height:1.15;margin:calc(-45px - env(safe-area-inset-top,0px)) 64px 12px 20px;
   padding-top:env(safe-area-inset-top,0px);max-width:720px;position:relative;z-index:0;pointer-events:none; /* 與同步按鈕同一行：上移至置頂列內，右邊留位給按鈕 */
@@ -735,6 +752,7 @@ button:active:not(:disabled){transform:scale(.96)}
       <button class="icon-btn mobile-only" id="menuBtn" aria-label="開啟選單">☰</button>
       <h1 id="pageTitle"><span class="tb-ic" id="pageIcon" aria-hidden="true">✏️</span><span class="tb-tx" id="pageText">新增支出</span></h1>
       <span id="syncState"></span>
+      <button class="bell-btn" id="ibBell" type="button" hidden aria-label="待確認消費通知" title="待確認消費通知"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22.5a2.6 2.6 0 0 0 2.5-2h-5a2.6 2.6 0 0 0 2.5 2zm7.3-6.2-1.3-1.6V10.5a6 6 0 0 0-4.6-5.8V4a1.4 1.4 0 0 0-2.8 0v.7A6 6 0 0 0 6 10.5v4.2l-1.3 1.6a1 1 0 0 0 .8 1.7h13a1 1 0 0 0 .8-1.7z"/></svg><span class="bell-n" id="ibBellN"></span></button>
       <button class="sync-btn" id="syncBtn" aria-label="立即同步至 Google Sheet" title="立即同步">
         <svg viewBox="0 0 512 512" aria-hidden="true"><circle cx="256" cy="256" r="240" fill="currentColor"/>
           <path class="ar" d="M330 160 A130 130 0 0 0 128 250"/><polygon class="ah" points="82,246 174,246 128,322"/>
@@ -745,7 +763,6 @@ button:active:not(:disabled){transform:scale(.96)}
 
     <!-- Input -->
     <section class="page" id="p-input">
-      <button class="ib-banner" id="ibBanner" type="button" hidden><span>🔔</span><span id="ibBannerText"></span><span>›</span></button>
       <div class="combo-row" id="comboRow" hidden></div>
       <div class="tabs" role="tablist">
         <button class="tab" data-s="旅遊">旅遊</button>
@@ -2226,10 +2243,10 @@ async function loadInbox(force){
   try { const j = await get({action:'inbox'}); S.inbox = j.rows || []; ibAt = Date.now(); } catch(e){ S.inbox = S.inbox || []; }
   const n = S.inbox.length;
   $('#ibBadge').hidden = !n; $('#ibBadge').textContent = n;
-  $('#ibBanner').hidden = !n; $('#ibBannerText').textContent = `${n} 筆消費通知待確認`;
+  $('#ibBell').hidden = !n; $('#ibBellN').textContent = n > 99 ? '99+' : n; $('#ibBell').setAttribute('aria-label', `${n} 筆消費通知待確認`);
   return S.inbox;
 }
-$('#ibBanner').addEventListener('click', () => go('inbox'));
+$('#ibBell').addEventListener('click', () => go('inbox'));
 const itemOpts = (sec, sel) => (sel = sel === MEAL ? '餐飲' : sel, [])
   .concat(SECTIONS[sec].map(x => [x[0], `${x[1]} ${x[0]}`]))
   .concat(sel && sel !== MEAL && !SECTIONS[sec].some(x => x[0] === sel) ? [[sel, sel]] : [])
@@ -2668,7 +2685,7 @@ function spApplySrc(sp){
   }
   if (src.inbox && S.inbox){
     S.inbox = S.inbox.filter(x => x.id !== src.inbox); const n = S.inbox.length;
-    $('#ibBadge').hidden = !n; $('#ibBadge').textContent = n; $('#ibBanner').hidden = !n; $('#ibBannerText').textContent = `${n} 筆消費通知待確認`;
+    $('#ibBadge').hidden = !n; $('#ibBadge').textContent = n; $('#ibBell').hidden = !n; $('#ibBellN').textContent = n > 99 ? '99+' : n;
   }
   if (src.form){ $('#amount').value = ''; $('#remark').value = ''; S.item = null; renderTabs(); updHkd(); }
 }
