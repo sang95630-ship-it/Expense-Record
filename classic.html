@@ -336,7 +336,9 @@ select[data-cur]{pointer-events:none}
 .cur-sheet.drag{transition:none}
 .cur-head{padding:0 18px;margin-bottom:8px}
 .cur-search{display:none;padding:0 16px 8px}
-.cur-search .text-in{padding:9px 12px;font-size:15px}
+.cur-search .text-in{padding:9px 12px;font-size:16px}
+/* iPhone：輸入欄字體小於 16px 時，Safari 聚焦會自動放大整頁，故一律不小於 16px */
+@supports (-webkit-touch-callout:none){ .text-in,#srQ,#emoIn,textarea{font-size:max(16px,1em)} }
 .cur-sheet.exp .cur-search{display:block}
 .cur-chips{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:0 16px 8px}
 .cur-chips button{border:0;background:var(--surface-2);border-radius:14px;padding:9px 0 7px;color:var(--ink);cursor:pointer}
