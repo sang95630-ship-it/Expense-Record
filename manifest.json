@@ -1,4 +1,5 @@
 {
+  "id": "./",
   "name": "記帳簿",
   "short_name": "記帳簿",
   "description": "個人消費紀錄，自動同步至 Google Sheet",
@@ -8,7 +9,7 @@
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#ECEFF1",
-  "theme_color": "#37474F",
+  "theme_color": "#3F8FE0",
   "icons": [
     {
       "src": "icon-192.png",

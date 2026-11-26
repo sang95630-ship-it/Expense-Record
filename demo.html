@@ -705,7 +705,7 @@ button:active:not(:disabled){transform:scale(.96)}
   :root[data-theme="dark"][data-tint="graphite"]{--primary:#AEAEB2;--primary-ink:#000}
 
 /* ---- 體驗版 ---- */
-.nav-item[data-page="details"],#uiSwitch,#cfgForm,#qrH,#qrCard,#p-settings>h2:has(+ .steps),#p-settings .steps,#p-settings>h2:has(+ #healthBox),#healthBox{display:none!important}
+.nav-item[data-page="details"],#uiSwitch,#cfgForm,#qrH,#qrCard,#instH,#instCard,#p-settings>h2:has(+ .steps),#p-settings .steps,#p-settings>h2:has(+ #healthBox),#healthBox{display:none!important}
 .demo-banner{display:flex;gap:10px;align-items:flex-start;background:var(--warn-bg);color:var(--warn-ink);border-radius:14px;padding:10px 14px;margin:0 0 12px;font-size:13.5px;line-height:1.55}
 .demo-banner b{display:block;font-size:14px}
 </style>
@@ -852,6 +852,11 @@ button:active:not(:disabled){transform:scale(.96)}
         <button class="primary" id="cfgSave" type="button">連結並測試</button>
         <p class="small muted" id="cfgStatus"></p>
       </form>
+      <h2 id="instH">主畫面 App</h2>
+      <div class="card" id="instCard">
+        <p class="small" id="instState" style="margin:0;line-height:1.6"></p>
+        <button class="primary" id="instBtn" type="button" style="margin-top:12px" hidden>安裝 App</button>
+      </div>
       <h2 id="qrH">在另一部裝置登入</h2>
       <div class="card" id="qrCard">
         <p class="small muted" style="margin:0 0 10px">用另一部手機的相機掃描，即可自動填入連結及密碼並測試，毋須逐字輸入。QR code 及連結內含密碼，只在自己面前顯示，1 分鐘後自動隱藏。</p>
@@ -3140,7 +3145,7 @@ function renderSettings(){
   $('#cfgStatus').innerHTML = cfg.sheetUrl
     ? `已連結。<a href="${esc(cfg.sheetUrl)}" target="_blank" rel="noopener">開啟 Google Sheet</a>${n ? `，${n} 筆支出待同步` : ''}`
     : '尚未連結。';
-  itLoad(IT.sec); renderBudget(); renderPerf();
+  itLoad(IT.sec); renderBudget(); renderPerf(); renderInstall();
   $('#spPeopleIn').value = spPeopleList().join(', ');
   renderHealth();
 }
@@ -3411,6 +3416,24 @@ async function setupFromHash(){
   go('settings'); $('#cfgUrl').value = o.u; $('#cfgToken').value = o.t; $('#cfgSave').click();
 }
 setTimeout(setupFromHash, 300);
+
+/* ---------- 主畫面 App：安裝狀態及「安裝 App」按鈕（長按捷徑只在以 Chrome「安裝應用程式」安裝後出現） ---------- */
+let instEvt = null;
+const isApp = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+function renderInstall(){
+  const st = $('#instState'); if (!st) return;
+  st.innerHTML = isApp()
+    ? (isIOS ? '✓ 正以 App 方式開啟。iPhone 不支援長按捷徑。'
+      : '✓ 正以 App 方式開啟。長按主畫面圖示應見「記餐飲」「待確認」捷徑；如果沒有，請移除主畫面圖示，再用 Chrome 選單 ⋮ →「<b>安裝應用程式</b>」重新安裝。')
+    : isIOS ? '在 Safari 按「分享」→「加入主畫面」。iPhone 不支援長按捷徑。'
+    : instEvt ? '按下方「安裝 App」，之後長按主畫面圖示即見「記餐飲」「待確認」捷徑。'
+    : '目前在瀏覽器分頁中開啟。請用 Chrome 選單 ⋮ →「<b>安裝應用程式</b>」（不是「建立捷徑」），長按捷徑才會出現。';
+  $('#instBtn').hidden = !instEvt || isApp();
+}
+addEventListener('beforeinstallprompt', e => { e.preventDefault(); instEvt = e; renderInstall(); });
+addEventListener('appinstalled', () => { instEvt = null; renderInstall(); toast('已安裝，長按主畫面圖示即見捷徑', 3200); });
+$('#instBtn').addEventListener('click', async () => { if (!instEvt) return; instEvt.prompt(); try { await instEvt.userChoice; } catch(e){} instEvt = null; renderInstall(); });
 
 /* ---------- global ---------- */
 document.addEventListener('keydown', e => { if (e.key === 'Escape'){ closePicker(); closeFixed(); closeRec(); closeDrawer(); } });

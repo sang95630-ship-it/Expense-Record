@@ -85,6 +85,7 @@
 | + | 左右拉切換（`makePager()` 通用輪播）：項目格切換類別（`pickSection`）、支出明細切換「可控消費／固定支出／全部」（`#expPane`，`S.expPane(tab)` 產生各分頁內容）、每月分析切換「按類別／按項目」（`#anPane`，`S.anPane(mode)` 產生圓餅圖＋圖例）；開始橫向拖動時把相鄰一頁的預覽（`.pager-ghost`）放在左右兩側一起跟隨手指（`.grid-clip` 裁切）；兩端橡皮筋阻力；拉過 20% 或撥動 >0.35px/ms 即切換，回撥取消；拖動時高度按比例在兩頁之間過渡，放手後一段連續動畫（150–360ms）滑到位（高度同步），按分段按鈕切換亦以 `animHeight()` 平滑過渡高度，完成後才換成真正內容（無閃動），否則回彈；分段控制滑塊於完成後才移動；先判斷方向（水平需 >1.2×垂直），垂直時交回頁面捲動；側欄手勢在這兩處只接受由左邊緣 24px（`EDGE`）內開始的拉動；Android 觸感回饋 | ✅ |
 | + | 常用組合（方案 A，兩個版本共用）：新增支出頁頂部「常用」橫向列，按過往紀錄找出最常用「類別＋項目＋備註」（`comboList`：每筆 1 分，±2 小時時段 ×2，30 日內 ×1.5，最少 2 次，最多 5 個；來源為 `dataCache` 月份＋佇列，不計固定及分帳），一按即預選並聚焦金額（金額留空） | ✅ |
 | + | 主畫面長按捷徑（manifest `shortcuts`）：記餐飲（`?s=日常&i=餐飲`，直接聚焦金額）、待確認（`?p=inbox`）；圖示 `sc-*.png`；`sw.js` VERSION 升至 v2 | ✅ |
+| + | 主畫面圖示（方案 5 Liquid Glass：藍紫→藍綠漸變＋霧面玻璃＋白色 $）：`icon.svg`、`icon-192/512.png`（圓角透明）、`icon-maskable-512.png`／`apple-touch-icon.png`（滿版）；manifest 加 `id`；`sw.js` v7。設定頁「主畫面 App」卡：顯示是否以 App 方式開啟、Chrome `beforeinstallprompt` 時提供「安裝 App」按鈕；長按捷徑只在 Chrome「安裝應用程式」（WebAPK）後出現，iPhone 不支援 | ✅ |
 | + | PWA：`manifest.json` + `sw.js`（index.html 網絡優先、其他靜態檔快取優先、Google Fonts SWR；GAS／匯率 API 不快取）；圖示 `icon.svg`／`icon-192/512.png`／`icon-maskable-512.png`／`apple-touch-icon.png` | ✅ |
 
 ## 介面版本（新設計為預設）
