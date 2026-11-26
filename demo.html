@@ -506,7 +506,7 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
 
 /* ---- 置頂列（iOS 大標題模式）----
    大標題（#largeTitle）屬內容層，隨頁面自然向上捲走；越過門檻（捲到置頂列之下）時切換 .collapsed：大標題淡出、置頂列小標題及玻璃背景淡入。
-   淡入淡出以固定時間播放（與捲動速度無關），門檻設有回差（>36px 收起、<24px 展開），避免在門檻附近來回閃動。
+   淡入淡出以固定時間播放（與捲動速度無關），門檻設有回差（>28px 收起、<16px 展開），避免在門檻附近來回閃動。
    全程跟隨手指，沒有突然切換的字級或對齊，因此轉換順滑 */
 .topbar{display:grid;grid-template-columns:44px 1fr 44px;align-items:center;gap:0;background:transparent;box-shadow:none;max-width:none;
   padding:calc(6px + env(safe-area-inset-top,0px)) 12px 6px;min-height:calc(50px + env(safe-area-inset-top,0px));isolation:isolate}
@@ -520,7 +520,8 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
 .topbar #menuBtn{grid-column:1}
 .topbar .sync-btn{grid-column:3;justify-self:end}
 #syncState{position:absolute;right:58px;top:calc(50% + env(safe-area-inset-top,0px)/2);transform:translateY(-50%);font-size:12px}
-.large-title{font-size:34px;font-weight:700;letter-spacing:.005em;line-height:1.15;margin:0 20px 10px;max-width:720px;
+.large-title{font-size:34px;font-weight:700;letter-spacing:.005em;line-height:1.15;margin:calc(-45px - env(safe-area-inset-top,0px)) 64px 12px 20px;
+  padding-top:env(safe-area-inset-top,0px);max-width:720px;position:relative;z-index:0;pointer-events:none; /* 與同步按鈕同一行：上移至置頂列內，右邊留位給按鈕 */
   transform-origin:left bottom;transition:opacity .3s ease,transform .45s var(--spring)}
 .large-title.collapsed{opacity:0;transform:scale(.96)}
 .sync-btn{width:36px;height:36px;padding:3px;background:var(--glass);border:.5px solid var(--glass-edge);box-shadow:var(--glass-shadow);transition:transform .4s var(--spring-b)}
@@ -3481,7 +3482,7 @@ if (!cfg.url) go('settings'); else {
   const top = document.querySelector('.topbar'), lt = document.getElementById('largeTitle');
   let tick = false, col = false;
   const titleScroll = () => { tick = false; const y = Math.max(0, scrollY);
-    const next = col ? y > 24 : y > 36; if (next === col) return; col = next;
+    const next = col ? y > 16 : y > 28; if (next === col) return; col = next;
     top.classList.toggle('collapsed', col); lt.classList.toggle('collapsed', col); };
   addEventListener('scroll', () => { if (!tick){ tick = true; requestAnimationFrame(titleScroll); } }, { passive:true });
   const _go = go; go = function(p){ _go(p); mark(); bar.classList.remove('mini'); lt.textContent = TITLES[p] || '';
