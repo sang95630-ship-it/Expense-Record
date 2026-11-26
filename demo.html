@@ -199,14 +199,14 @@ h2{font-size:16px;margin:28px 0 10px}
 .bud-amt .per{font-size:15px;color:var(--muted)}
 .bud-card.sm .bud-num{font-size:24px}
 .bud-track{position:relative;margin:0 6px}
-.bud-range{-webkit-appearance:none;appearance:none;width:100%;height:6px;border-radius:3px;outline:none;margin:10px 0;
-  background:linear-gradient(to right,var(--primary) var(--p,0%),var(--soft) var(--p,0%))}
+.bud-range{-webkit-appearance:none;appearance:none;width:100%;height:32px;outline:none;margin:0;cursor:pointer;
+  background:linear-gradient(to right,var(--primary) var(--p,0%),var(--soft) var(--p,0%)) center/100% 6px no-repeat;border-radius:3px}
 .bud-range::-webkit-slider-thumb{-webkit-appearance:none;width:26px;height:26px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.3),0 0 0 .5px rgba(0,0,0,.1);cursor:pointer}
 .bud-range::-moz-range-thumb{width:26px;height:26px;border:0;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.3)}
 .bud-avg{position:absolute;top:50%;width:3px;height:14px;margin:-7px 0 0 -1.5px;border-radius:2px;background:var(--st-warn);pointer-events:none}
 .bud-meta{display:flex;justify-content:center;gap:12px;align-items:center;font-size:13px;color:var(--muted);flex-wrap:wrap}
 .bud-meta .avg-t b{color:var(--ink);font-variant-numeric:tabular-nums}
-.bud-meta .link-btn{padding:2px 4px;font-size:13px;color:var(--primary);font-weight:600}
+.bud-meta .link-btn{padding:8px 6px;min-height:36px;font-size:13px;color:var(--primary);font-weight:600}
 details.bud-more{margin-top:4px}
 details.bud-more>summary{padding:8px 0;text-align:center}
 .trend svg{width:100%;height:auto;display:block;overflow:visible}
@@ -221,7 +221,7 @@ details summary{cursor:pointer;color:var(--muted);font-size:13px;margin-top:10px
 /* 固定項目摺疊（狀態記於 localStorage fxFold） */
 details.fold{margin:28px 0 10px} /* 間距放在容器上：動畫加 overflow:hidden 時不會因外邊距不再重疊而跳動 */
 details.fold>.card{margin-top:10px}
-details.fold>summary{list-style:none;display:flex;align-items:center;gap:8px;margin:0;color:var(--ink);font-size:inherit;-webkit-user-select:none;user-select:none}
+details.fold>summary{list-style:none;display:flex;align-items:center;gap:8px;margin:0;min-height:36px;color:var(--ink);font-size:inherit;-webkit-user-select:none;user-select:none}
 details.fold>summary::-webkit-details-marker{display:none}
 details.fold>summary h2{margin:0;flex:1}
 /* 摺疊按鈕：右側圓形 ⌄，展開時旋轉 180° 成 ⌃（觸控範圍 26px） */
@@ -280,7 +280,7 @@ details.trip-card>summary::-webkit-details-marker,details.raw>summary::-webkit-d
 .trip-body{padding-top:6px}
 .trip-acts{display:flex;justify-content:flex-end;margin-top:10px}
 details.raw{margin-top:10px}
-details.raw>summary{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+details.raw>summary{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);min-height:36px}
 details.raw .fold-btn{width:22px;height:22px}
 .trip-now{display:inline-block;font-size:11px;padding:1px 8px;border-radius:999px;background:var(--warn-bg);color:var(--warn-ink);margin-left:6px;vertical-align:2px}
 .sr-month{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);padding:12px 0 2px;font-weight:500}
@@ -431,7 +431,7 @@ a{color:inherit}
 .sp-tx{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
 .sp-tx:last-child{border-bottom:0}
 .sp-tx .amt{margin-left:auto;font-weight:600;font-variant-numeric:tabular-nums}
-.sp-tx .sp-chip{padding:3px 10px;font-size:13px}
+.sp-tx .sp-chip{padding:6px 12px;font-size:13px;min-height:34px}
 .sp-tx.done .who,.sp-tx.done .amt{opacity:.5;text-decoration:line-through}
 .sp-card{margin-bottom:12px;cursor:pointer}
 .sp-card .sp-total{font-size:20px;font-weight:600}
@@ -1373,7 +1373,17 @@ async function flushQ(){
   else if (synced) renderRecent();
 }
 setInterval(() => { if (getQ().length) flushQ(); }, 30000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden){ flushQ(); loadInbox(); } });
+// 跨日：App 留在背景過夜，回到前台或每分鐘檢查；日期未被手動改過才自動改為今天，看本月／上月的頁面亦順延
+S.lastDay = todayStr();
+function dayRollover(){
+  const t = todayStr(), prev = S.lastDay; if (t === prev) return; S.lastDay = t;
+  if (S.date === prev){ S.date = t; renderDate(); }
+  const pm = prev.slice(0,7), tm = t.slice(0,7);
+  if (pm !== tm){ if (S.expYm === pm) S.expYm = tm; if (S.anYm === shiftYm(pm,-1)) S.anYm = shiftYm(tm,-1); }
+  refresh();
+}
+setInterval(dayRollover, 60000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden){ dayRollover(); flushQ(); loadInbox(); } });
 // 手動同步：送出本機未同步紀錄，再重新讀取 Google Sheet 最新資料
 async function manualSync(){
   const btn = $('#syncBtn');
@@ -1565,7 +1575,7 @@ if (localStorage.getItem('sideCollapsed') === '1') sidebar.classList.add('collap
 
 /* ---------- input page ---------- */
 const chipsHtml = (sec, sel) => SECTIONS[sec].map(([n,e]) =>
-  `<button class="chip${sel===n?' active':''}" data-item="${n}"><span class="em">${e}</span>${n}</button>`).join('');
+  `<button class="chip${sel===n?' active':''}" data-item="${esc(n)}"><span class="em">${esc(e)}</span>${esc(n)}</button>`).join('');
 function renderTabs(){
   $$('.tab').forEach(b => { const on = b.dataset.s === S.section; b.classList.toggle('active', on); b.setAttribute('aria-selected', on); });
   $('#itemGrid').innerHTML = chipsHtml(S.section, S.item);
@@ -2102,7 +2112,7 @@ $('#reSave').addEventListener('click', async () => {
 $('#reDel').addEventListener('click', async () => {
   const r = S.reEdit, pend = getQ().find(x => x.id === r.id);
   if (pend && inFlight === r.id) return toast('此紀錄正在同步，請稍後再刪除');
-  if (!confirm(`刪除 ${r.date} 的「${r.item} ${showAmt(r)}」？`)) return;
+  if (!confirm(`刪除 ${ddmm(r.date)} 的「${r.item} ${showAmt(r)}」？`)) return;
   if (pend){ setQ(getQ().filter(x => x.id !== r.id)); closeRec(); toast('已刪除（未同步的紀錄）'); return refresh(); }
   try { await post({action:'deleteRecord', id:r.id}); delete S.cache[r.date.slice(0,7)]; dropSummary(); closeRec(); toast('已刪除'); refresh(); }
   catch(err){ toast(errMsg(err)); }
