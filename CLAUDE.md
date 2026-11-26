@@ -54,6 +54,10 @@
 | + | 選擇類別後，鍵盤彈出時自動向下捲，令「確認」（儲存支出）按鈕位於鍵盤上方（`visualViewport` resize + `keepSaveVisible()`；頁面太短時臨時加底部空白）；儲存後收起鍵盤並平滑捲回頂部；「已儲存」提示顯示項目＋金額（外幣附 ≈HK$，非今天附日期），顯示 3.2 秒；提示旁「復原」按鈕（↶ 圖示＋倒數圈，aria-label「復原」）：新紀錄於 `hold` 暫緩同步約 3.5 秒，復原即從佇列移除並把內容填回表格 | ✅ |
 | + | 本機資料快取（stale-while-revalidate）：每月紀錄（最多 8 個月）、固定項目、趨勢數據存於 localStorage `dataCache`；打開時即時顯示上次資料，背景更新（每項每次使用一次，`revalidate`），有改動才重畫，期間頂部顯示「更新中…」；寫入後經 `S.cache`（Proxy）刪除／`dropFixed()`／`dropSummary()`／`resetCache()` 同時刪除本機副本，下次直接取最新 | ✅ |
 | + | 預先載入：啟動 1.5 秒後載入上兩個月、固定項目及趨勢數據；切換月份時預取相鄰月份 | ✅ |
+| + | 伺服器快取（D，API_VERSION 11）：Code.gs `recRows_()` 把 Records 整表讀取結果存於 CacheService（每段 ≤30,000 字元，6 小時），以「世代」`rec_gen` 防讀寫競爭；任何 doPost 寫入、`monthlyJob`、Sheet 手動修改（簡單觸發器 `onEdit`）及前端「同步」（`info&fresh=1`）即失效；日期欄先轉文字避免 UTC 差一日；list／summary／search／trips／export 共用 | ✅ |
+| + | 搜尋載入更多（E）：`search` 加 `off`（每次 300 筆）及 `more`；結果底「載入更多（尚有 N 筆）」接續 | ✅ |
+| + | 在另一部裝置登入（F）：設定頁「顯示 QR code」（`qrcode.min.js`，qrcode-generator 2.0.4 MIT，按需載入，1 分鐘自動隱藏）／「複製連結」，連結為 `./#setup=<base64url({u,t})>`；打開時以 `ask()` 確認後自動填入並測試，網址列的 # 部分立即移除；體驗版隱藏 | ✅ |
+| + | 匯出 CSV（G）：設定頁「本月／今年／近 12 個月／全部」→ GET `action=export&from&to`（按日期排序全部紀錄）→ UTF-8 BOM CSV（日期、類別、項目、金額(HKD)、幣種、原幣金額、匯率、備註、旅程、固定項目、分帳、ID），以 `'` 前綴防公式注入；未同步紀錄不包括 | ✅ |
 | + | 效能記錄（設定頁「效能」卡）：每個請求的次數、中位及最慢時間、伺服器處理時間（Code.gs 回傳 `ms`）、快取命中次數；最近 300 筆存於 localStorage `perfLog` | ✅ |
 | + | 標題列右上角「同步」按鈕：送出本機佇列 → 清快取 → 重新讀取 Sheet；同步中圖示旋轉 | ✅ |
 | + | 同步健康狀態（設定頁）：待同步筆數、最後成功同步（localStorage `syncHealth`）、最近錯誤、伺服器版本（`API_VERSION`，前後端須一致）、最後備份時間 | ✅ |
@@ -114,6 +118,7 @@
 - GET `action=items` → `{items:{section:[[name, emoji], …]}}`
 - GET `action=inbox` → 待確認列表；`action=merchants` → 規則；`action=trips` → 旅程及統計
 - GET `action=settings` → `{settings}`；`action=summary&from&to` → `{months:{ym:{類別:金額, _n}}}`；`action=search&q&from[&f]` → `{rows（最近 300 筆）, count, total[, filtered]}`（`f`＝JSON 篩選標籤，API_VERSION 10）
+- GET `action=export&from&to` → `{rows}`（全部欄位，API_VERSION 11）；`action=info&fresh=1` 清除伺服器快取
 - GET `action=list&month=yyyy-MM` → `{rows}`（含 `splitId`）；`action=splits` → `{rows}`
 - GET `action=fixed` → `{rows}`
 - POST `add`（固定項目可帶 `cycle`）/ `updateRecord` / `deleteRecord` / `updateFixed`（可帶 `cycle`）/ `toggleFixed` / `saveItems`（`items` 為空即還原預設）/ `saveSettings`（值為空即刪除該鍵）/ `inbox`（Tasker，亦接受 form-urlencoded）/ `confirmInbox`（remember：auto／ask／空）/ `dismissInbox`（remember：ignore）/ `saveRule` / `deleteRule` / `saveTrip`（`oldName` 改名）/ `deleteTrip`（`untag` 一併清除紀錄標記） / `saveSplit`（`split`＋`records`＝我的份額，以 SplitID 同步 Records）/ `deleteSplit`（連同紀錄）；`add`／`updateRecord` 可帶 `trip`
@@ -148,4 +153,5 @@
   - Signal 通知要點（沿用 St 專案經驗）：endpoint `https://signal.callmebot.com/signal/send.php?phone=<UUID>&apikey=<KEY>&text=…`；`phone` 必須是 Bot 回覆網址中 36 字元 UUID；UUID／apikey 存於本專案指令碼屬性 `SIGNAL_UUID`／`SIGNAL_APIKEY`（不入 repo）；`UrlFetchApp` 網址上限 2KB（中文約 200 字／條，入帳通知很短不需分段）；CallMeBot 出錯亦回 HTTP 200，成功須同時符合回覆含 `sent`／`queued`／`Apikey Correct` 且不含 `error`／`invalid`；免費第三方服務，訊息內容經其伺服器
 - ✅ 第 6a 期：分帳頁（取代獨立的 Split-Tools repo）＋催收提醒
 - ✅ 第 6b 期：「待確認」短訊轉為分帳、新增支出頁「AA」按鈕、修改紀錄轉為分帳、支出概覽「AA 待收」、旅程頁 AA 資訊、常用參加者
-- 未選：#4 信用卡手續費、#6 儲存後日期回到今天、#15 匯出 CSV
+- ✅ 改善 D–G：伺服器快取、搜尋載入更多、QR code 登入、匯出 CSV
+- 未選：#4 信用卡手續費、#6 儲存後日期回到今天

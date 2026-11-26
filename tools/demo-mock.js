@@ -100,7 +100,7 @@
   const get = p => {
     switch (p.action) {
       case 'splits': return { rows: SPLITS };
-      case 'info': return { sheetUrl: '', version: 10, lastBackup: new Date(Date.now() - 2 * 864e5).toISOString(), serverTime: new Date().toISOString(), signal: false, lastWatchdog: new Date(Date.now() - 20 * 60000).toISOString(), notifyQueue: 0 };
+      case 'info': return { sheetUrl: '', version: 11, lastBackup: new Date(Date.now() - 2 * 864e5).toISOString(), serverTime: new Date().toISOString(), signal: false, lastWatchdog: new Date(Date.now() - 20 * 60000).toISOString(), notifyQueue: 0 };
       case 'list': return { rows: R.filter(r => r.date.slice(0, 7) === p.month) };
       case 'fixed': return { rows: FIXED };
       case 'items': return { items: ITEMS };
@@ -118,7 +118,12 @@
           && (!by('trip').length || by('trip').includes(r.trip || '')) && by('text').every(t => [r.section, r.item, r.remark].some(x => String(x).toLowerCase().includes(t.toLowerCase())))
           : [r.section, r.item, r.remark].some(x => String(x).toLowerCase().includes(q));
         const hit = R.filter(r => r.date.slice(0, 7) >= from && ok(r)).sort((a, b) => b.date.localeCompare(a.date));
-        return { rows: hit.slice(0, 300), count: hit.length, total: hit.reduce((a, r) => a + r.amount, 0), filtered: !!f.length };
+        const off = Number(p.off) || 0;
+        return { rows: hit.slice(off, off + 300), count: hit.length, total: hit.reduce((a, r) => a + r.amount, 0), filtered: !!f.length, more: hit.length > off + 300 };
+      }
+      case 'export': {
+        const from = p.from || '0000-00', to = p.to || '9999-99';
+        return { rows: R.filter(r => { const m = r.date.slice(0, 7); return m >= from && m <= to; }).sort((a, b) => a.date.localeCompare(b.date)) };
       }
       case 'inbox': return { rows: INBOX };
       case 'merchants': return { rows: MERCH };

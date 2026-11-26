@@ -321,6 +321,8 @@ details.raw .fold-btn{width:22px;height:22px}
 .overlay{position:fixed;inset:0;background:rgba(16,22,26,.45);display:none;z-index:60;align-items:flex-end;justify-content:center}
 .overlay.show{display:flex}
 #askOverlay{z-index:80}
+#qrBox svg{display:block;width:220px;height:220px;margin:4px auto 14px;background:#fff;border-radius:14px;padding:8px;box-sizing:border-box}
+.sr-more{display:block;width:100%;margin:12px 0 4px}
 .rule-hint{margin:8px 4px;padding-left:18px;line-height:1.7}
 .rule-hint b{color:var(--ink);font-weight:600}
 .ask-sheet #askMsg{font-size:17px;font-weight:600;margin:6px 2px 4px;line-height:1.45}
@@ -600,6 +602,12 @@ a{color:inherit}
         <button class="primary" id="cfgSave" type="button">連結並測試</button>
         <p class="small muted" id="cfgStatus"></p>
       </form>
+      <h2 id="qrH">在另一部裝置登入</h2>
+      <div class="card" id="qrCard">
+        <p class="small muted" style="margin:0 0 10px">用另一部手機的相機掃描，即可自動填入連結及密碼並測試，毋須逐字輸入。QR code 及連結內含密碼，只在自己面前顯示，1 分鐘後自動隱藏。</p>
+        <div id="qrBox" hidden></div>
+        <div class="row-btns"><button class="ghost" id="qrCopy" type="button">複製連結</button><button class="primary" id="qrShow" type="button">顯示 QR code</button></div>
+      </div>
       <h2>快選項目</h2>
       <div class="card">
         <div class="seg" id="itSeg"></div>
@@ -609,7 +617,7 @@ a{color:inherit}
           <button class="ghost" id="itReset" type="button">還原預設</button>
           <button class="primary" id="itSave" type="button">儲存</button>
         </div>
-        <p class="hint small" style="margin-top:8px">左欄填 emoji；↑↓ 調整次序。改名不會更改過往紀錄；每類最多 24 個。儲存後所有裝置同步。</p>
+        <p class="hint small" style="margin-top:8px">按左邊圖示更換（40 個圖示庫或任何 emoji）；↑↓ 調整次序。改名不會更改過往紀錄；每類最多 24 個。儲存後所有裝置同步。</p>
       </div>
       <h2>分帳常用參加者</h2>
       <div class="card">
@@ -622,6 +630,12 @@ a{color:inherit}
         <div id="budBox"></div>
         <button class="primary" id="budSave" type="button">儲存預算</button>
         <p class="hint small" style="margin-top:8px">留空即不設預算。用量達 80% 及 100% 時，看門狗會經 Signal 提醒（09:00–22:00，每月各一次）。</p>
+      </div>
+      <h2>匯出 CSV</h2>
+      <div class="card">
+        <div class="seg" id="exSeg"><button type="button" data-ex="m" class="active">本月</button><button type="button" data-ex="y">今年</button><button type="button" data-ex="12">近 12 個月</button><button type="button" data-ex="all">全部</button></div>
+        <button class="primary" id="exBtn" type="button" style="margin-top:12px">下載 CSV</button>
+        <p class="hint small" style="margin-top:8px">UTF-8（含 BOM），Excel／Numbers／Google Sheets 可直接開啟中文。「金額(HKD)」供分析；外幣另列原幣金額及匯率。未同步的紀錄不包括在內。</p>
       </div>
       <h2>效能</h2>
       <div class="card" id="perfBox"></div>
@@ -947,7 +961,7 @@ function queueOp(op, r, upd){
   return o;
 }
 let flushing = false, inFlight = null, syncErr = '';
-const API_VERSION = 10; // 與 Code.gs 的 API_VERSION 對應
+const API_VERSION = 11; // 與 Code.gs 的 API_VERSION 對應
 // 同步健康狀態（只存本機）：okAt 最後成功同步時間；err／errAt 最近一次錯誤
 function noteHealth(ok, err){
   const h = lsGet('syncHealth', {});
@@ -1022,10 +1036,11 @@ async function manualSync(){
     while (flushing) await new Promise(r => setTimeout(r, 200));
     syncErr = ''; await flushQ();
     const n = pendingN();
+    const info = n ? null : await get({action:'info', fresh:1}); // fresh：一併清除伺服器快取（D）
     resetCache(); dropFixed(); dropSummary(); loadInbox(true);
     if (n) toast(`${n} 筆未能同步（${syncErr || '請稍後再試'}）`);
     else {
-      const j = await get({action:'info'}); noteHealth(true);
+      const j = info; noteHealth(true);
       toast(j.version >= API_VERSION ? '已同步，資料為最新' : '已同步，但 Code.gs 未更新至最新版本，請重新部署', j.version >= API_VERSION ? 2400 : 4500);
     }
     refresh();
@@ -2587,15 +2602,18 @@ function renderSearch(){
   else $('#srBody').innerHTML = '<p class="muted small" style="margin:14px 4px">選擇或輸入條件，例如「日常」＋「餐飲」，或店名「大快活」。可疊加多個條件：不同種類同時符合，同種類任一符合。</p>';
 }
 const srAdd = f => { S.srF.push(f); $('#srQ').value = ''; renderSearch(); };
-async function doSearch(){
+async function doSearch(more){
   const F = S.srF.slice(), box = $('#srBody'); if (!F.length) return renderSearch();
   const from = S.srRange ? shiftYm(todayStr().slice(0,7), -(S.srRange - 1)) : '';
-  box.innerHTML = '<p class="muted" style="margin:14px 4px">搜尋中…</p>';
+  if (!more){ S.srPrev = null; box.innerHTML = '<p class="muted" style="margin:14px 4px">搜尋中…</p>'; }
   try {
-    const j = await get({ action:'search', q:F[0].v, from, f:JSON.stringify(F) });
+    const off = more && S.srPrev ? S.srPrev.length : 0; // 載入更多：由已載入的筆數接續（API_VERSION 11）
+    const j = await get({ action:'search', q:F[0].v, from, f:JSON.stringify(F), off });
     if (JSON.stringify(F) !== JSON.stringify(S.srF)) return; // 條件已改變
     let srv = normRows(j.rows), count = j.count, total = j.total;
     if (!j.filtered){ srv = srv.filter(r => srMatch(r, F)); count = srv.length; total = sum(srv); } // 舊版伺服器：本機套用其餘條件
+    if (off) srv = [...S.srPrev, ...srv.filter(r => !S.srPrev.some(x => x.id === r.id))];
+    S.srPrev = srv; const hasMore = !!j.more;
     const local = getQ().filter(r => (!from || r.date.slice(0,7) >= from) && srMatch(r, F)).map(r => ({...r, pending:true}));
     const rows = [...local, ...srv].sort((a,b) => b.date.localeCompare(a.date)); S.searchRows = rows;
     count += local.length; total += sum(local);
@@ -2610,8 +2628,9 @@ async function doSearch(){
         <div><div class="lbl">總支出</div><div class="v">${money(round2(total))}</div></div>
         <div><div class="lbl">筆數</div><div class="v">${count}</div></div>
         <div><div class="lbl">平均每次</div><div class="v">${money(round2(total / count))}</div></div></div>
-        <div class="sr-last">最近一次 ${ddmm(rows[0].date)}${count > rows.length ? `，列出最近 ${rows.length} 筆（合計已包括全部 ${count} 筆）` : ''}</div></div>
-      <div class="card" style="margin-top:12px">${Object.entries(days).map(([d, rs]) => `<div class="sr-day"><span>${dl(d)}</span><span>${money(round2(sum(rs)))}</span></div>${rs.map(row).join('')}`).join('')}</div>`;
+        <div class="sr-last">最近一次 ${ddmm(rows[0].date)}${count > rows.length ? `，已列出最近 ${rows.length} 筆（合計已包括全部 ${count} 筆）` : ''}</div></div>
+      <div class="card" style="margin-top:12px">${Object.entries(days).map(([d, rs]) => `<div class="sr-day"><span>${dl(d)}</span><span>${money(round2(sum(rs)))}</span></div>${rs.map(row).join('')}`).join('')}</div>
+      ${hasMore && count > rows.length ? `<button class="ghost sr-more" id="srMore" type="button">載入更多（尚有 ${count - rows.length} 筆）</button>` : ''}`;
   } catch(e){ box.innerHTML = `<p class="muted" style="margin:14px 4px">${esc(errMsg(e))}</p>`; }
 }
 $('#srQ').addEventListener('input', srRenderBox);
@@ -2628,6 +2647,7 @@ $('#srField').addEventListener('click', e => {
 $('#srSugg').addEventListener('click', e => { const b = e.target.closest('[data-s]'); if (!b) return; const x = S.srSug[+b.dataset.s]; if (x) srAdd({ t:x.t, v:x.v }); });
 $('#srRange').addEventListener('click', e => { const b = e.target.closest('[data-r]'); if (!b) return; S.srRange = Number(b.dataset.r); renderSearch(); });
 $('#srBody').addEventListener('click', e => {
+  const mo = e.target.closest('#srMore'); if (mo){ mo.disabled = true; mo.textContent = '載入中…'; doSearch(true); return; }
   const a = e.target.closest('[data-add]');
   if (a){ const [t, v] = a.dataset.add.split('|'); if (!S.srF.some(x => x.t === t && x.v === v)) srAdd({ t, v }); scrollTo({ top:0, behavior:'smooth' }); return; }
   const ed = e.target.closest('[data-edit]'); if (ed) openRec(ed.dataset.edit);
@@ -2854,6 +2874,63 @@ $('#cfgSave').addEventListener('click', async () => {
   } catch(e){ cfg = old; toast('連結失敗：' + errMsg(e)); }
   btn.disabled = false;
 });
+
+/* ---------- 匯出 CSV（G） ---------- */
+S.exRange = 'm';
+$('#exSeg').addEventListener('click', e => { const b = e.target.closest('[data-ex]'); if (!b) return; S.exRange = b.dataset.ex; $$('#exSeg [data-ex]').forEach(x => x.classList.toggle('active', x === b)); });
+// 儲存格：含逗號／引號／換行加引號；以 = + - @ 開頭的文字前加 '，防止試算表把備註當作公式執行
+const csvCell = v => { if (typeof v === 'number') return String(v); let t = String(v ?? ''); if (/^[=+\-@\t\r]/.test(t)) t = "'" + t; return /[",\r\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+$('#exBtn').addEventListener('click', async () => {
+  if (!cfg.url){ toast('請先連結 Google Sheet'); return; }
+  const tm = todayStr().slice(0,7), r = S.exRange;
+  const [from, to, tag] = r === 'm' ? [tm, tm, tm] : r === 'y' ? [tm.slice(0,4) + '-01', tm.slice(0,4) + '-12', tm.slice(0,4)] : r === '12' ? [shiftYm(tm,-11), tm, `${shiftYm(tm,-11)}_${tm}`] : ['', '', '全部'];
+  const btn = $('#exBtn'); btn.disabled = true; btn.textContent = '匯出中…';
+  try {
+    const j = await get({ action:'export', from, to });
+    const rows = normRows(j.rows || []), fx = x => x.currency && x.currency !== 'HKD';
+    const head = ['日期','類別','項目','金額(HKD)','幣種','原幣金額','匯率','備註','旅程','固定項目','分帳','ID'];
+    const lines = [head, ...rows.map(x => [x.date, x.section, x.item, x.amount, x.currency || 'HKD', fx(x) ? x.origAmount : '', fx(x) ? x.fxRate : '', x.remark, x.trip, x.fixedId ? '是' : '', x.splitId ? '是' : '', x.id])]
+      .map(a => a.map(csvCell).join(','));
+    const blob = new Blob(['﻿' + lines.join('\r\n')], { type:'text/csv;charset=utf-8' });
+    const a = Object.assign(document.createElement('a'), { href:URL.createObjectURL(blob), download:`記帳簿_${tag}.csv` });
+    document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    const n = pendingN(); toast(`已匯出 ${rows.length} 筆${n ? `（另有 ${n} 筆未同步，未包括在內）` : ''}`, 3200);
+  } catch(e){ toast(e.message === 'unknown action' ? '請先更新 Code.gs（版本 11）並重新部署' : errMsg(e)); }
+  btn.disabled = false; btn.textContent = '下載 CSV';
+});
+
+/* ---------- 在另一部裝置登入（F）：QR code／連結 #setup=<base64url({u,t})>；# 後的內容不會傳送到任何伺服器 ---------- */
+const b64u = t => btoa(String.fromCharCode(...new TextEncoder().encode(t))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const unb64u = t => new TextDecoder().decode(Uint8Array.from(atob(t.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)));
+const setupLink = () => new URL('./', location.href).href + '#setup=' + b64u(JSON.stringify({ u:cfg.url, t:cfg.token }));
+const loadQrLib = () => window.qrcode ? Promise.resolve() : new Promise((res, rej) => {
+  const sc = document.createElement('script'); sc.src = 'qrcode.min.js'; sc.onload = res; sc.onerror = () => rej(new Error('未能載入 QR code 元件，請連網後再試')); document.head.append(sc);
+});
+let qrT;
+function hideQr(){ clearTimeout(qrT); $('#qrBox').hidden = true; $('#qrBox').innerHTML = ''; $('#qrShow').textContent = '顯示 QR code'; }
+$('#qrShow').addEventListener('click', async () => {
+  if (!$('#qrBox').hidden) return hideQr();
+  if (!cfg.url || !cfg.token){ toast('請先連結 Google Sheet'); return; }
+  try {
+    await loadQrLib(); const q = qrcode(0, 'M'); q.addData(setupLink()); q.make();
+    $('#qrBox').innerHTML = q.createSvgTag({ cellSize:4, margin:2, scalable:true }); $('#qrBox').hidden = false; $('#qrShow').textContent = '隱藏';
+    qrT = setTimeout(hideQr, 60000);
+  } catch(e){ toast(e.message); }
+});
+$('#qrCopy').addEventListener('click', async () => {
+  if (!cfg.url || !cfg.token){ toast('請先連結 Google Sheet'); return; }
+  try { await navigator.clipboard.writeText(setupLink()); toast('已複製連結（內含密碼，只傳給自己）', 3200); } catch(e){ toast('未能複製'); }
+});
+async function setupFromHash(){
+  const m = location.hash.match(/^#setup=([\w-]+)$/); if (!m) return;
+  history.replaceState(null, '', location.pathname + location.search); // 立即移除，避免密碼留在網址列／書籤
+  let o; try { o = JSON.parse(unb64u(m[1])); } catch(e){ toast('設定連結格式不正確'); return; }
+  if (!o?.u || !o?.t) return;
+  if (cfg.url === o.u && cfg.token === o.t){ toast('此裝置已連結'); return; }
+  if (!await ask('使用此連結設定這部裝置？', { sub: cfg.url ? '會取代這部裝置現有的連結及密碼，然後測試連線。' : '會自動填入 Google Sheet 連結及密碼，然後測試連線。', yes:'設定' })) return;
+  go('settings'); $('#cfgUrl').value = o.u; $('#cfgToken').value = o.t; $('#cfgSave').click();
+}
+setTimeout(setupFromHash, 300);
 
 /* ---------- global ---------- */
 document.addEventListener('keydown', e => { if (e.key === 'Escape'){ closePicker(); closeFixed(); closeRec(); closeDrawer(); } });

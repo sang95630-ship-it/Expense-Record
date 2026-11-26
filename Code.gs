@@ -1,7 +1,7 @@
 /**** 記帳簿 後端：貼到 Google Sheet → 擴充功能 → Apps Script ****/
 // TOKEN 不再寫在程式碼內：請到「專案設定 → 指令碼屬性」新增屬性 TOKEN（值 = 你的密碼）。
 // 之後更新 Code.gs 可直接整份貼上；更換 TOKEN 只需改屬性值，毋須重新部署。
-const API_VERSION = 10;            // 前端用來檢查 Code.gs 是否已更新
+const API_VERSION = 11;            // 前端用來檢查 Code.gs 是否已更新
 const BACKUP_FOLDER = '記帳簿備份'; // Google Drive 備份資料夾名稱
 const BACKUP_KEEP = 8;            // 保留最近 8 份（約 2 個月）
 const REC = 'Records', FIX = 'Fixed', ITEMS = 'Items', SETTINGS = 'Settings', INBOX = 'Inbox', MERCH = 'Merchants';
@@ -50,6 +50,34 @@ function settings_() {
   if (sh) sh.getDataRange().getValues().slice(1).forEach(r => { if (r[0]) o[r[0]] = r[1]; });
   return o;
 }
+/* ============ 伺服器快取（D）：Records 整表讀取結果存於 CacheService ============
+ * 以「世代」防止讀寫競爭：任何寫入（doPost、monthlyJob、手動修改 Sheet 的 onEdit）都換一個新世代，
+ * 舊世代的快取即作廢；讀取時世代不符一律重讀 Sheet。值分段存放（每段 ≤ 30,000 字元，中文 UTF-8 亦在 100KB 上限內） */
+const RC_GEN = 'rec_gen', RC_TTL = 21600, RC_CHUNK = 30000;
+function recRows_() {
+  const c = CacheService.getScriptCache();
+  let gen = c.get(RC_GEN);
+  if (gen) {
+    const meta = c.get('rec_' + gen);
+    if (meta) {
+      const keys = []; for (let i = 0; i < Number(meta); i++) keys.push('rec_' + gen + '_' + i);
+      const got = c.getAll(keys);
+      if (keys.every(k => got[k] != null)) { try { return JSON.parse(keys.map(k => got[k]).join('')); } catch (e) {} }
+    }
+  } else { gen = Utilities.getUuid().slice(0, 8); c.put(RC_GEN, gen, RC_TTL); }
+  // 日期欄轉為文字（JSON 會把 Date 轉成 UTC，令日期差一日）
+  const rows = rows_(REC).filter(r => r[0]).map(r => r.map((v, i) => v instanceof Date ? (i === 1 ? ymd_(v) : v.toISOString()) : v));
+  try {
+    const str = JSON.stringify(rows), parts = {}; let n = 0;
+    for (let i = 0; i < str.length; i += RC_CHUNK) parts['rec_' + gen + '_' + (n++)] = str.slice(i, i + RC_CHUNK);
+    c.putAll(parts, RC_TTL); c.put('rec_' + gen, String(n), RC_TTL);
+  } catch (e) {} // 快取失敗不影響結果
+  return rows;
+}
+function dropRecCache_() { try { CacheService.getScriptCache().put(RC_GEN, Utilities.getUuid().slice(0, 8), RC_TTL); } catch (e) {} }
+// 簡單觸發器：在 Google Sheet 手動修改任何儲存格後，令伺服器快取失效
+function onEdit() { dropRecCache_(); }
+
 function sheet_(n) { return SpreadsheetApp.getActive().getSheetByName(n); }
 function rows_(n) { return sheet_(n).getDataRange().getValues().slice(1); }
 function isOn_(v) { return v === true || String(v).toUpperCase() === 'TRUE'; }
@@ -96,6 +124,7 @@ function weeklyBackup() {
 
 /** 每月 1 號：把所有「啟用中」固定項目寫入本月（年繳項目只在起始月份的同月入帳）。回傳新增筆數。 */
 function monthlyJob() {
+  dropRecCache_(); // 固定項目入帳會改動 Records
   const rec = sheet_(REC), ym = fmt_(new Date(), 'yyyy-MM');
   const done = new Set(rows_(REC).filter(r => r[7] && ym_(r[1]) === ym).map(r => r[7]));
   const due = r => String(r[8] || 'M') !== 'Y' || ym_(r[4]).slice(5) === ym.slice(5);
@@ -204,18 +233,19 @@ function watchdog() {
 function doGet(e) {
   const p = e.parameter;
   return handle_(p, () => {
+    if (p.action === 'info' && p.fresh === '1') dropRecCache_(); // 手動同步：一併清除伺服器快取
     if (p.action === 'info') return { sheetUrl: SpreadsheetApp.getActive().getUrl(), version: API_VERSION,
       lastBackup: props_().getProperty('LAST_BACKUP') || '', serverTime: new Date().toISOString(),
       signal: signalReady_(), lastWatchdog: props_().getProperty('LAST_WATCHDOG') || '',
       notifyQueue: JSON.parse(props_().getProperty('NOTIFY_QUEUE') || '[]').length };
-    if (p.action === 'list') return { rows: rows_(REC).filter(r => r[0] && ym_(r[1]) === p.month).map(recObj_) };
+    if (p.action === 'list') return { rows: recRows_().filter(r => r[0] && ym_(r[1]) === p.month).map(recObj_) };
     if (p.action === 'fixed') return { rows: rows_(FIX).filter(r => r[0]).map(fixObj_) };
     if (p.action === 'settings') return { settings: settings_() };
     if (p.action === 'trips') {
       // 旅程定義 + 統計（合計、筆數、按項目、按原幣），包括只在紀錄中出現的旅程名稱
       const map = {};
       trips_().forEach(t => map[t.name] = Object.assign(t, { total: 0, count: 0, byItem: {}, byCur: {}, first: '', last: '' }));
-      rows_(REC).forEach(r => {
+      recRows_().forEach(r => {
         const n = String(r[11] || ''); if (!r[0] || !n) return;
         const t = map[n] = map[n] || { name: n, start: '', end: '', currency: '', note: '', total: 0, count: 0, byItem: {}, byCur: {}, first: '', last: '' };
         const amt = Number(r[4]), cur = String(r[8] || 'HKD'), d = ymd_(r[1]);
@@ -240,7 +270,7 @@ function doGet(e) {
     if (p.action === 'summary') {
       // 區間彙總：{ 'yyyy-MM': { 類別: 金額, _n: 筆數 } }
       const months = {};
-      rows_(REC).forEach(r => {
+      recRows_().forEach(r => {
         if (!r[0]) return; const ym = ym_(r[1]); if (ym < p.from || ym > p.to) return;
         const o = months[ym] = months[ym] || { _n: 0 };
         o[r[2]] = (o[r[2]] || 0) + Number(r[4]); o._n++;
@@ -248,22 +278,27 @@ function doGet(e) {
       return { months };
     }
     if (p.action === 'search') {
-      const q = String(p.q || '').trim().toLowerCase(), from = p.from || '0000-00';
+      const q = String(p.q || '').trim().toLowerCase(), from = p.from || '0000-00', off = Math.max(0, Number(p.off) || 0); // off：載入更多（API_VERSION 11）
       // 篩選標籤（API_VERSION 10）：f=[{t:sec|item|trip|text, v}]；不同種類為「且」，同種類為「或」
       let f = []; try { f = JSON.parse(p.f || '[]'); } catch (e) {}
       if (f.length) {
         const by = t => f.filter(x => x && x.t === t).map(x => String(x.v));
         const sec = by('sec'), item = by('item'), trip = by('trip'), text = by('text').map(x => x.toLowerCase());
-        const hitF = rows_(REC).filter(r => r[0] && ym_(r[1]) >= from && (!sec.length || sec.indexOf(String(r[2])) >= 0)
+        const hitF = recRows_().filter(r => r[0] && ym_(r[1]) >= from && (!sec.length || sec.indexOf(String(r[2])) >= 0)
           && (!item.length || item.indexOf(normItem_(r[2], r[3])) >= 0) && (!trip.length || trip.indexOf(String(r[11] || '')) >= 0)
           && text.every(t => [r[2], r[3], r[5]].some(x => String(x).toLowerCase().indexOf(t) >= 0)))
           .map(recObj_).sort((a, b) => b.date.localeCompare(a.date));
-        return { rows: hitF.slice(0, 300), count: hitF.length, total: hitF.reduce((a, r) => a + r.amount, 0), filtered: true };
+        return { rows: hitF.slice(off, off + 300), count: hitF.length, total: hitF.reduce((a, r) => a + r.amount, 0), filtered: true, more: hitF.length > off + 300 };
       }
       if (!q) return { rows: [], count: 0, total: 0 };
-      const hit = rows_(REC).filter(r => r[0] && ym_(r[1]) >= from && [r[2], r[3], r[5]].some(x => String(x).toLowerCase().indexOf(q) >= 0))
+      const hit = recRows_().filter(r => r[0] && ym_(r[1]) >= from && [r[2], r[3], r[5]].some(x => String(x).toLowerCase().indexOf(q) >= 0))
         .map(recObj_).sort((a, b) => b.date.localeCompare(a.date));
-      return { rows: hit.slice(0, 300), count: hit.length, total: hit.reduce((a, r) => a + r.amount, 0) };
+      return { rows: hit.slice(off, off + 300), count: hit.length, total: hit.reduce((a, r) => a + r.amount, 0), more: hit.length > off + 300 };
+    }
+    if (p.action === 'export') { // 匯出 CSV（G）：from／to 為 yyyy-MM，可留空
+      const from = p.from || '0000-00', to = p.to || '9999-99';
+      return { rows: recRows_().filter(r => { const ym = ym_(r[1]); return ym >= from && ym <= to; }).map(recObj_)
+        .sort((a, b) => a.date.localeCompare(b.date) || String(a.createdAt).localeCompare(String(b.createdAt))) };
     }
     if (p.action === 'splits') return { rows: splits_() };
     if (p.action === 'items') {
@@ -285,7 +320,7 @@ function doPost(e) {
   return handle_(b, () => {
     const lock = LockService.getScriptLock();
     lock.waitLock(15000);
-    try { return write_(b); } finally { lock.releaseLock(); }
+    try { return write_(b); } finally { dropRecCache_(); lock.releaseLock(); } // 任何寫入後伺服器快取失效
   });
 }
 
