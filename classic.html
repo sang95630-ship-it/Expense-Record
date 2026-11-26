@@ -2046,11 +2046,12 @@ const itemOpts = (sec, sel) => (sel = sel === MEAL ? '餐飲' : sel, [])
   .map(([v,l]) => `<option value="${esc(v)}"${v === sel ? ' selected' : ''}>${esc(l)}</option>`).join('');
 /* 支付平台的待確認卡：Android 上提供「打開 AlipayHK／WeChat」按鈕，對照 App 內交易紀錄的真正商戶後填寫備註
    （intent:// 只適用於 Android Chrome；未安裝該 App 時不會有反應） */
-const PAY_APPS = [[/ALIPAY/i, 'hk.alipay.wallet', 'AlipayHK'], [/WECHAT|WEIXIN/i, 'com.tencent.mm', 'WeChat']];
+// [配對, 套件, 名稱, 深層連結 scheme://路徑]：Chrome 只會打開支援網頁連結（BROWSABLE）的入口，只寫套件名稱會轉到 Play 商店，故須用 App 的 scheme
+const PAY_APPS = [[/ALIPAY/i, 'hk.alipay.wallet', 'AlipayHK', 'alipayhk', 'platformapi/startapp'], [/WECHAT|WEIXIN/i, 'com.tencent.mm', 'WeChat', 'weixin', '']];
 function payAppLink(merchant){
   if (!/Android/i.test(navigator.userAgent)) return '';
   const a = PAY_APPS.find(([re]) => re.test(merchant || '')); if (!a) return '';
-  return `<a class="ib-app" href="intent://#Intent;package=${a[1]};end">打開 ${a[2]} 查看真正商戶 ›</a>`;
+  return `<a class="ib-app" href="intent://${a[4]}#Intent;scheme=${a[3]};package=${a[1]};end">打開 ${a[2]} 查看真正商戶 ›</a>`;
 }
 async function renderInbox(){
   const box = $('#ibBody'); box.innerHTML = '<p class="muted">載入中…</p>';
