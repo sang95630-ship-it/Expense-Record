@@ -1758,7 +1758,21 @@ function setCur(code){
 function updHkd(){
   const a = num($('#amount').value), r = parseFloat($('#fxRate').value);
   $('#fxHkd').textContent = a > 0 && r > 0 ? '≈ ' + money(round2(a*r)) : '';
+  fitAmount();
 }
+/* 金額自動縮小以符合欄寬：以 CSS 原本字體大小為上限，按文字實際寬度等比例縮小（最小 20px） */
+const fitCv = document.createElement('canvas').getContext('2d');
+function fitAmount(){
+  const el = $('#amount'); if (!el) return;
+  el.style.fontSize = ''; el.style.height = '';
+  const h0 = el.offsetHeight; // 縮小字體時保持欄高不變，版面不會跳動
+  const cs = getComputedStyle(el), base = parseFloat(cs.fontSize), w = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  if (!w || !el.value) return;
+  fitCv.font = `${cs.fontWeight} ${base}px ${cs.fontFamily}`;
+  const ls = parseFloat(cs.letterSpacing) || 0, tw = fitCv.measureText(el.value).width + ls * el.value.length + 4;
+  if (tw > w){ el.style.height = h0 + 'px'; el.style.fontSize = Math.max(20, Math.floor(base * w / tw)) + 'px'; }
+}
+addEventListener('resize', fitAmount);
 $('#cur').addEventListener('change', e => { setCur(e.target.value); if (S.section === '旅遊') lsSet('lastTravelCur', S.cur); });
 $('#fxRate').addEventListener('input', e => {
   e.target.value = e.target.value.replace(/[^\d.]/g,'').replace(/(\..*)\./g,'$1');
