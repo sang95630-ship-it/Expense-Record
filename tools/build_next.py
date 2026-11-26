@@ -94,6 +94,12 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
 .topbar::before{content:"";position:absolute;inset:0;z-index:-1;background:var(--glass);box-shadow:0 .5px 0 var(--line);
   -webkit-backdrop-filter:blur(22px) saturate(190%);backdrop-filter:blur(22px) saturate(190%);opacity:0;transition:opacity .3s ease}
 .topbar.collapsed::before{opacity:1}
+/* 下捲後回復原有高度：上方空間 20px→6px，以 margin-bottom 補回同等高度，令內容不跳動（兩者同一節奏過渡，總高度不變） */
+.topbar{transition:padding-top .28s var(--ease-out),min-height .28s var(--ease-out),margin-bottom .28s var(--ease-out)}
+.topbar.collapsed{padding-top:calc(6px + env(safe-area-inset-top,0px));min-height:calc(50px + env(safe-area-inset-top,0px));margin-bottom:14px}
+.topbar .bell-btn{transition:top .28s var(--ease-out),transform .4s var(--spring-b)}
+.topbar.collapsed .bell-btn{top:calc(7px + env(safe-area-inset-top,0px))}
+.topbar.collapsed.compact .bell-btn{top:calc(11px + env(safe-area-inset-top,0px))}
 .topbar h1,.topbar.compact h1{grid-column:2;font-size:17px;font-weight:600;justify-content:center;text-align:center;opacity:0;
   transform:translateY(8px);transition:opacity .22s ease,transform .22s ease}
 .topbar.collapsed h1{opacity:1;transform:none;transition:opacity .34s ease .06s,transform .5s var(--spring-b) .06s}
