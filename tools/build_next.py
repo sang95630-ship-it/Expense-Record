@@ -183,14 +183,16 @@ button:active:not(:disabled){transform:scale(.96)}
 .combo-row{margin:0 -16px 14px;padding:4px 16px 6px}
 .combo{background:var(--glass);border:.5px solid var(--glass-edge);box-shadow:var(--glass-shadow);border-radius:999px;padding:7px 15px 7px 9px}
 .combo .em{width:30px;height:30px;border-radius:50%;background:var(--tint-fill);display:grid;place-items:center;font-size:17px}
-.grid{gap:16px 8px;margin:20px 0 18px}
-.chip{background:none;border:0;padding:0;gap:7px;font-size:12px;color:var(--ink)}
-.chip .em{width:58px;height:58px;border-radius:18px;display:grid;place-items:center;font-size:29px;
-  background:linear-gradient(180deg,var(--surface),color-mix(in srgb,var(--surface) 88%,var(--primary)));
-  box-shadow:0 1px 2px rgba(0,0,0,.06),inset 0 0 0 .5px var(--line);transition:transform .45s var(--spring-b),box-shadow .25s}
-.chip:active .em{transform:scale(.9)}
-.chip.active{background:none;font-weight:600;color:var(--primary)}
-.chip.active .em{background:var(--tint-fill);box-shadow:0 0 0 2.5px var(--primary);animation:pop .5s var(--spring-b)}
+.grid{gap:10px;margin:18px 0 18px}
+/* 項目格：白色圓角卡片＋立體插圖（參考 Copilot） */
+.chip{background:var(--surface);border:2px solid transparent;border-radius:20px;padding:12px 4px 10px;gap:6px;font-size:13px;font-weight:500;color:var(--ink);
+  box-shadow:0 1px 2px rgba(0,0,0,.05);transition:transform .45s var(--spring-b),background .2s,border-color .2s}
+.chip .em{width:40px;height:40px;display:grid;place-items:center;font-size:32px;line-height:1}
+.chip .emo{width:40px;height:40px;filter:drop-shadow(0 2px 2px rgba(0,0,0,.12))}
+.chip:active{transform:scale(.94)}
+.chip.active{background:var(--tint-fill);border-color:var(--primary);font-weight:600;color:var(--ink)}
+.chip.active .em{animation:pop .5s var(--spring-b)}
+.rec .emo{width:24px;height:24px}.combo .emo{width:21px;height:21px}
 @keyframes pop{40%{transform:scale(1.1)}}
 .form{gap:14px}
 .date-btn{background:var(--surface-2);border-radius:var(--r-field);padding:12px 15px;font-size:17px}

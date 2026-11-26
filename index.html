@@ -118,6 +118,8 @@ h2{font-size:16px;margin:28px 0 10px}
 #expPane,#anPane{position:relative;will-change:transform;touch-action:pan-y}
 .chip{display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 4px;border:1.5px solid transparent;background:var(--surface);border-radius:14px;font-size:13px}
 .chip .em{font-size:24px;line-height:1.2}
+.emo{width:1.3em;height:1.3em;display:block;object-fit:contain;-webkit-user-drag:none;pointer-events:none}
+.chip .emo{width:34px;height:34px}
 .chip.active{border-color:var(--primary);background:var(--surface-2);font-weight:700}
 .form{display:flex;flex-direction:column;gap:12px}
 .date-btn{display:flex;align-items:center;gap:10px;width:100%;border:0;background:var(--surface-2);padding:12px 14px;border-radius:12px;text-align:left}
@@ -347,6 +349,15 @@ select.text-in{appearance:auto;padding:10px 12px}
 .it-row{display:grid;grid-template-columns:52px minmax(0,1fr) repeat(3,34px);gap:6px;align-items:center;margin-bottom:6px}
 .it-row .text-in{padding:8px 10px}
 .it-row .em-in{text-align:center;font-size:18px;padding:6px 4px}
+.it-row .em-pick{height:40px;font-size:20px;display:grid;place-items:center;background:var(--surface-2);border-color:transparent;border-radius:12px}
+.it-row .em-pick .emo{width:28px;height:28px}
+.emo-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;margin:6px 0 12px}
+.emo-grid button{aspect-ratio:1;border:0;background:none;border-radius:12px;display:grid;place-items:center;padding:0}
+.emo-grid button.on{background:var(--surface-2);box-shadow:inset 0 0 0 2px var(--primary)}
+.emo-grid .emo{width:30px;height:30px}
+.emo-in{display:flex;gap:8px;align-items:center}
+.emo-in .text-in{flex:1 1 auto;min-width:0;width:auto;font-size:20px}
+.emo-in .primary{flex:0 0 auto;width:auto;min-width:88px;padding-left:22px;padding-right:22px}
 .it-row button{border:1px solid var(--line);background:none;border-radius:8px;height:34px;color:var(--muted)}
 .it-row button.x{color:var(--danger)}
 .cy-seg{margin-top:-2px}
@@ -591,14 +602,16 @@ button:active:not(:disabled){transform:scale(.96)}
 .combo-row{margin:0 -16px 14px;padding:4px 16px 6px}
 .combo{background:var(--glass);border:.5px solid var(--glass-edge);box-shadow:var(--glass-shadow);border-radius:999px;padding:7px 15px 7px 9px}
 .combo .em{width:30px;height:30px;border-radius:50%;background:var(--tint-fill);display:grid;place-items:center;font-size:17px}
-.grid{gap:16px 8px;margin:20px 0 18px}
-.chip{background:none;border:0;padding:0;gap:7px;font-size:12px;color:var(--ink)}
-.chip .em{width:58px;height:58px;border-radius:18px;display:grid;place-items:center;font-size:29px;
-  background:linear-gradient(180deg,var(--surface),color-mix(in srgb,var(--surface) 88%,var(--primary)));
-  box-shadow:0 1px 2px rgba(0,0,0,.06),inset 0 0 0 .5px var(--line);transition:transform .45s var(--spring-b),box-shadow .25s}
-.chip:active .em{transform:scale(.9)}
-.chip.active{background:none;font-weight:600;color:var(--primary)}
-.chip.active .em{background:var(--tint-fill);box-shadow:0 0 0 2.5px var(--primary);animation:pop .5s var(--spring-b)}
+.grid{gap:10px;margin:18px 0 18px}
+/* 項目格：白色圓角卡片＋立體插圖（參考 Copilot） */
+.chip{background:var(--surface);border:2px solid transparent;border-radius:20px;padding:12px 4px 10px;gap:6px;font-size:13px;font-weight:500;color:var(--ink);
+  box-shadow:0 1px 2px rgba(0,0,0,.05);transition:transform .45s var(--spring-b),background .2s,border-color .2s}
+.chip .em{width:40px;height:40px;display:grid;place-items:center;font-size:32px;line-height:1}
+.chip .emo{width:40px;height:40px;filter:drop-shadow(0 2px 2px rgba(0,0,0,.12))}
+.chip:active{transform:scale(.94)}
+.chip.active{background:var(--tint-fill);border-color:var(--primary);font-weight:600;color:var(--ink)}
+.chip.active .em{animation:pop .5s var(--spring-b)}
+.rec .emo{width:24px;height:24px}.combo .emo{width:21px;height:21px}
 @keyframes pop{40%{transform:scale(1.1)}}
 .form{gap:14px}
 .date-btn{background:var(--surface-2);border-radius:var(--r-field);padding:12px 15px;font-size:17px}
@@ -936,6 +949,14 @@ button:active:not(:disabled){transform:scale(.96)}
   </div>
 </div>
 
+<div class="overlay" id="emoOverlay">
+  <div class="sheet" role="dialog" aria-label="揀選圖示">
+    <div class="sheet-head"><strong>揀選圖示</strong><button class="link-btn" id="emoClose" type="button">關閉</button></div>
+    <div class="emo-grid" id="emoGrid"></div>
+    <div class="emo-in"><input class="text-in" id="emoIn" type="text" maxlength="8" placeholder="或輸入任何 emoji" autocomplete="off"><button class="primary" id="emoUse" type="button">使用</button></div>
+  </div>
+</div>
+
 <div class="overlay" id="askOverlay">
   <div class="sheet ask-sheet" role="alertdialog" aria-modal="true" aria-labelledby="askMsg">
     <p id="askMsg"></p><p class="hint small" id="askSub"></p>
@@ -1008,6 +1029,12 @@ function fmtAmountInput(el){
   try { el.setSelectionRange(k, k); } catch(e){}
 }
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+/* 圖示庫：40 個 Fluent Emoji 3D 插圖（emoji/<碼位>.webp，MIT）；不在庫內的 emoji 以系統字型顯示 */
+const EMO_LIB = ['✈️','🏨','🎟️','🚄','🍣','🛍️','🛡️','🧳','🍽️','🧋','🚇','🍪','🧴','📦','🏠','📺','🎫','📱','🌐','💡','🏢','👕','🔌','🎮','💊','🎁','🏋️','📚','🌿','✨','🍔','☕','🍺','🚕','🚌','⛽','🛒','🎬','🐾','💇'];
+const EMO_DATA = null; // 體驗版以 data URI 取代
+const emoCp = e => [...String(e)].filter(c => c !== '\ufe0f').map(c => c.codePointAt(0).toString(16)).join('-');
+const EMO_SET = new Set(EMO_LIB.map(emoCp));
+const emo = e => { const c = emoCp(e); return EMO_SET.has(c) ? `<img class="emo" src="${EMO_DATA?.[c] || `emoji/${c}.webp`}" alt="${esc(e)}" draggable="false">` : esc(e); };
 const iconOf = (s,i) => [...(SECTIONS[s]||[]), ...(LEGACY_MEAL.includes(i) ? [[i,'🍽️']] : []), ...(DEFAULT_SECTIONS[s]||[]), ...Object.values(SECTIONS).flat()].find(x=>x[0]===i)?.[1] || '•';
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)+Math.random().toString(36).slice(2));
 const dateLabel = s => { const [y,m,d] = s.split('-').map(Number); const w = '日一二三四五六'[new Date(y,m-1,d).getDay()]; return `${y}年${m}月${d}日（週${w}）`; };
@@ -1424,7 +1451,7 @@ if (localStorage.getItem('sideCollapsed') === '1') sidebar.classList.add('collap
 
 /* ---------- input page ---------- */
 const chipsHtml = (sec, sel) => SECTIONS[sec].map(([n,e]) =>
-  `<button class="chip${sel===n?' active':''}" data-item="${esc(n)}"><span class="em">${esc(e)}</span>${esc(n)}</button>`).join('');
+  `<button class="chip${sel===n?' active':''}" data-item="${esc(n)}"><span class="em">${emo(e)}</span>${esc(n)}</button>`).join('');
 function renderTabs(){
   $$('.tab').forEach(b => { const on = b.dataset.s === S.section; b.classList.toggle('active', on); b.setAttribute('aria-selected', on); });
   $('#itemGrid').innerHTML = chipsHtml(S.section, S.item);
@@ -1684,7 +1711,7 @@ function renderCombos(){
   const box = $('#comboRow'); if (!box) return;
   const list = comboList(); S.combos = list; box.hidden = !list.length;
   box.innerHTML = list.length ? `<span class="combo-lbl">常用</span>` + list.map((c,i) => `<button type="button" class="combo" data-combo="${i}" title="${esc(`${c.section}·${c.item}${c.remark ? '·' + c.remark : ''}，已記 ${c.n} 次`)}">
-    <span class="em">${iconOf(c.section, c.item)}</span><span class="tx">${esc(c.item)}${c.remark ? `<small>${esc(c.remark)}</small>` : ''}</span></button>`).join('') : '';
+    <span class="em">${emo(iconOf(c.section, c.item))}</span><span class="tx">${esc(c.item)}${c.remark ? `<small>${esc(c.remark)}</small>` : ''}</span></button>`).join('') : '';
 }
 $('#comboRow').addEventListener('click', e => {
   const b = e.target.closest('[data-combo]'); if (!b) return;
@@ -1712,7 +1739,7 @@ const HL_BIG = 200, HL_MID = 100; // 大額高亮門檻（HKD）
 function recRow(r, withDel, noDate, hl){
   const lv = hl && r.section !== '固定' ? (r.amount >= HL_BIG ? ' hl-big' : r.amount >= HL_MID ? ' hl-mid' : '') : '';
   const sub = `${noDate ? '' : ddmm(r.date) + '，'}${r.section}${r.remark ? '，'+esc(r.remark) : ''}${r.pending ? '，待同步' : ''}`;
-  return `<div class="rec${lv}"><span class="em">${iconOf(r.section,r.item)}</span>
+  return `<div class="rec${lv}"><span class="em">${emo(iconOf(r.section,r.item))}</span>
     <div class="main"><div>${esc(r.item)}</div><div class="sub">${sub}</div></div>
     <span class="amt">${amtHtml(r)}</span>
     ${withDel ? `<button class="ghost" data-edit="${esc(r.id)}">修改</button>` : ''}</div>`;
@@ -1794,7 +1821,7 @@ async function renderExpense(){
       <h2>固定項目設定（每月${hasY ? '約' : ''} ${money(round2(fxTotal))}${hasY ? '，年繳已攤分' : ''}）</h2><span class="cnt">${fixed.filter(f => f.active).length} 項</span>${FOLD_BTN}</summary>
       <div class="card list">` + (fx.length ? fx.map(f => {
       const last = f.history ? f.history.split('; ').pop() : '';
-      return `<div class="rec${f.active ? '' : ' off'}"><span class="em">${iconOf('固定', f.item)}</span>
+      return `<div class="rec${f.active ? '' : ' off'}"><span class="em">${emo(iconOf('固定', f.item))}</span>
         <div class="main"><div>${esc(f.remark || f.item)}</div>
         <div class="sub">${esc(f.item)}，${f.cycle === 'Y' ? `每年 ${Number(f.startYm.slice(5))} 月，` : ''}${ymLabel(f.startYm)}起${f.active ? '' : '，已停用'}${last ? '，最近調整 '+esc(last) : ''}</div></div>
         <span class="amt">${money(f.amount)}<small>/${f.cycle === 'Y' ? '年' : '月'}</small></span>
@@ -2079,7 +2106,7 @@ async function renderAnalysis(){
         </div>
         <div class="card list top3">
           <h2 style="margin:10px 0 2px">最大 3 筆支出</h2>
-          ${top.map((r,i) => `<div class="rec"><span class="rank">${i+1}</span><span class="em">${iconOf(r.section,r.item)}</span>
+          ${top.map((r,i) => `<div class="rec"><span class="rank">${i+1}</span><span class="em">${emo(iconOf(r.section,r.item))}</span>
             <div class="main"><div>${esc(r.item)}${r.remark ? '，'+esc(r.remark) : ''}</div><div class="sub">${r.date}，${r.section}，佔 ${(r.amount/total*100).toFixed(1)}%</div></div>
             <span class="amt">${amtHtml(r)}</span></div>`).join('')}
         </div>
@@ -2871,18 +2898,32 @@ function itLoad(sec){ IT.sec = sec; IT.rows = SECTIONS[sec].map(x => [...x]); re
 function renderItemsEd(){
   $('#itSeg').innerHTML = ORDER.map(s => `<button type="button" data-its="${s}" class="${s === IT.sec ? 'active' : ''}">${s}</button>`).join('');
   $('#itList').innerHTML = IT.rows.map(([n,e],i) => `<div class="it-row">
-    <input class="text-in em-in" data-k="1" data-i="${i}" value="${esc(e)}" maxlength="8" aria-label="emoji">
+    <button type="button" class="em-pick" data-ie="${i}" aria-label="更換圖示">${emo(e)}</button>
     <input class="text-in" data-k="0" data-i="${i}" value="${esc(n)}" maxlength="10" aria-label="名稱">
     <button type="button" data-iu="${i}" aria-label="上移">↑</button><button type="button" data-id="${i}" aria-label="下移">↓</button>
     <button type="button" class="x" data-ix="${i}" aria-label="刪除">✕</button></div>`).join('');
 }
 $('#itSeg').addEventListener('click', e => { const b = e.target.closest('[data-its]'); if (b) itLoad(b.dataset.its); });
+// 圖示揀選：40 個圖示庫，或輸入任何 emoji（不在庫內即以系統 emoji 顯示）
+let emoFor = -1;
+function openEmo(i){
+  emoFor = i; const cur = emoCp(IT.rows[i][1]);
+  $('#emoGrid').innerHTML = EMO_LIB.map(e => `<button type="button" data-emo="${e}" class="${emoCp(e) === cur ? 'on' : ''}" aria-label="${e}">${emo(e)}</button>`).join('');
+  $('#emoIn').value = EMO_SET.has(cur) ? '' : IT.rows[i][1];
+  $('#emoOverlay').classList.add('show');
+}
+const setEmo = e => { if (emoFor < 0 || !e) return; IT.rows[emoFor][1] = e; $('#emoOverlay').classList.remove('show'); renderItemsEd(); };
+$('#emoGrid').addEventListener('click', e => { const b = e.target.closest('[data-emo]'); if (b) setEmo(b.dataset.emo); });
+$('#emoUse').addEventListener('click', () => { const v = $('#emoIn').value.trim(); if (!v) return toast('請輸入 emoji'); setEmo([...new Intl.Segmenter().segment(v)][0].segment); });
+$('#emoClose').addEventListener('click', () => $('#emoOverlay').classList.remove('show'));
+$('#emoOverlay').addEventListener('click', e => { if (e.target.id === 'emoOverlay') e.target.classList.remove('show'); });
 $('#itList').addEventListener('input', e => { const t = e.target; if (t.dataset.i != null) IT.rows[t.dataset.i][t.dataset.k] = t.value; });
 $('#itList').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return; const r = IT.rows;
   if (b.dataset.iu > 0){ const i = +b.dataset.iu; [r[i-1], r[i]] = [r[i], r[i-1]]; }
   else if (b.dataset.id != null && +b.dataset.id < r.length-1){ const i = +b.dataset.id; [r[i+1], r[i]] = [r[i], r[i+1]]; }
   else if (b.dataset.ix != null) r.splice(+b.dataset.ix, 1);
+  else if (b.dataset.ie != null) return openEmo(+b.dataset.ie);
   renderItemsEd();
 });
 $('#itAdd').addEventListener('click', () => { if (IT.rows.length >= 24) return toast('每類最多 24 個'); IT.rows.push(['', '✨']); renderItemsEd(); $$('#itList [data-k="0"]')[IT.rows.length-1]?.focus(); });

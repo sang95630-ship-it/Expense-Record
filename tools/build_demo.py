@@ -45,6 +45,11 @@ s = sub(s, '<section class="page" id="p-input">\n', '<section class="page" id="p
 # 常用參加者換成虛構名字
 s = sub(s, "const SPLIT_PEOPLE_DEF = [];", "const SPLIT_PEOPLE_DEF = ['阿明', '小美', '阿傑', 'Ken', 'Joyce'];")
 
+# 圖示庫以 data URI 內嵌（單一檔案可離線分享）
+import base64, json
+emo = {f.stem: 'data:image/webp;base64,' + base64.b64encode(f.read_bytes()).decode() for f in sorted((ROOT / 'emoji').glob('*.webp'))}
+s = sub(s, 'const EMO_DATA = null;', 'const EMO_DATA = ' + json.dumps(emo) + ';')
+
 # 模擬伺服器須在主程式之前載入
 s = sub(s, '<script>\nconst DEFAULT_SECTIONS', '<script>\n' + mock + '\n</script>\n<script>\nconst DEFAULT_SECTIONS')
 

@@ -39,6 +39,7 @@
 | + | 程式內確認框 `ask(msg,{sub,yes,no,danger})`（`#askOverlay`，取代瀏覽器 confirm）：停用固定項目、待確認「以後也略過／只略過這次」、刪除商戶規則、刪除分帳、還原預設項目 | ✅ |
 | + | 幣種＋匯率：預設 HKD；常用 JPY／CNY／HKD／USD，其他幣種於下方 optgroup；匯率自動取 open.er-api.com（每日快取 `fxRates`），可手動修改並記住（`fxManual[幣種]={rate,at}`，顯示輸入日期，14 日後自動失效改回參考匯率；舊格式純數字由首次讀取起計）；旅遊記住上次幣種（`lastTravelCur`）；固定項目只限 HKD | ✅ |
 | + | 「其他」新增「補充品」🌿 | ✅ |
+| + | 項目圖示（方案 2）：40 個 Microsoft Fluent Emoji 3D 插圖（MIT，`emoji/<碼位>.webp` 128px，共約 150KB，授權見 `emoji/LICENSE.md`）；`EMO_LIB`／`emo(e)` 把庫內 emoji 換成圖片（項目格、常用組合、紀錄列表、固定項目、最大支出），不在庫內者以系統 emoji 顯示；新設計項目格為白色圓角卡片（圖示＋名稱，選中加強調色邊框）；設定頁自訂項目按圖示打開「揀選圖示」（40 個圖示庫或輸入任何 emoji），Sheet `Items` 仍只存 emoji 字元；體驗版以 data URI 內嵌（`EMO_DATA`）；`sw.js` v5 預先快取圖示 | ✅ |
 | + | 早餐／午餐／晚餐合併為「餐飲」🍽️：Sheet 舊紀錄不改動，讀取時一律視作餐飲（前端 `normItem`／`normRows`、`collapseMeals` 處理舊自訂項目；Code.gs `normItem_` 用於 `recObj_`、搜尋篩選、旅程統計）；短訊 `@meal` 規則改為入「餐飲」；主畫面捷徑合併為「記餐飲」（舊「記早餐」等捷徑仍打開餐飲；`sw.js` v4） | ✅ |
 | + | 幣種選單平時只顯示符號（`#curLabel`），透明 select 覆蓋其上，下拉時才顯示「符號＋名稱＋代碼」；外幣時符號以橙色強調（`--warn-bg`／`--warn-ink`）；金額靠右 | ✅ |
 | + | 手機手勢：任何位置向右拉開側欄、向左收起；側欄跟隨手指，放手時快速撥動（>0.5px/ms）按方向，否則拉出超過 40% 即打開；垂直捲動、輸入框、日期滾輪、趨勢圖上不觸發；遮罩透明度跟隨 | ✅ |
