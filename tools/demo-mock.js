@@ -100,7 +100,7 @@
   const get = p => {
     switch (p.action) {
       case 'splits': return { rows: SPLITS };
-      case 'info': return { sheetUrl: '', version: 11, lastBackup: new Date(Date.now() - 2 * 864e5).toISOString(), serverTime: new Date().toISOString(), signal: false, lastWatchdog: new Date(Date.now() - 20 * 60000).toISOString(), notifyQueue: 0 };
+      case 'info': return { sheetUrl: '', version: 12, inboxLast: new Date(Date.now() - 3 * 3600e3).toISOString(), lastBackup: new Date(Date.now() - 2 * 864e5).toISOString(), serverTime: new Date().toISOString(), signal: false, lastWatchdog: new Date(Date.now() - 20 * 60000).toISOString(), notifyQueue: 0 };
       case 'list': return { rows: R.filter(r => r.date.slice(0, 7) === p.month) };
       case 'fixed': return { rows: FIXED };
       case 'items': return { items: ITEMS };
@@ -126,6 +126,7 @@
         return { rows: R.filter(r => { const m = r.date.slice(0, 7); return m >= from && m <= to; }).sort((a, b) => a.date.localeCompare(b.date)) };
       }
       case 'inbox': return { rows: INBOX };
+      case 'inboxLog': return { rows: INBOX.map(r => ({ ts: r.ts, source: r.source, raw: r.raw, merchant: r.merchant, amount: r.amount, status: 'pending' })) };
       case 'merchants': return { rows: MERCH };
       case 'trips': {
         const map = {};

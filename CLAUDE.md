@@ -78,7 +78,7 @@
 | + | 趨勢（Analysis 頁底）：近 6／12 個月按類別堆疊柱狀圖（由下而上 固定／日常／其他／旅遊），虛線為已完結月份平均，本月半透明，點柱跳到該月，附數據表；統計加「對比去年同月」；`summary` 一次取 24 個月，快取於 `S.summary`，寫入後失效 | ✅ |
 | + | 搜尋頁（sidebar 🔍）：篩選標籤——輸入時建議類別／項目／旅程／常用備註／「搜尋『…』」關鍵字，按一下成為標籤（× 移除，空白時 Backspace 刪最後一個）；可疊加：不同種類為「且」、同種類為「或」（`srMatch`）；伺服器 `action=search&f=[{t,v}]`（API_VERSION 10，回傳 `filtered:true`；舊版伺服器以第一條件查詢再本機篩選）；近 3／12 個月／全部；結果：總支出／筆數／平均每次＋最近一次，按日分組（DD/MM（週x）＋當日合計），每筆附類別及項目標籤（按標籤加入條件），按該行可修改；包括未同步紀錄 | ✅ |
 | + | 圖表色盤：dataviz 參考色盤（已驗證色盲及對比），`PAL_L`／`PAL_D`；類別色固定跟隨類別（`secColor`），不跟排名 | ✅ |
-| + | 通知自動記帳（第 5 期）：Tasker 轉發銀行短訊（見 `TASKER.md`）→ `action=inbox`；`PARSERS` 支援中銀信用卡、中銀戶口自動轉賬、花旗、安信、中國移動繳費；外幣以 open.er-api.com 換算（`fxRate_`，快取 6 小時）；`Merchants` 規則 auto／ask／ignore，商戶名互相包含（≥6 字元）即配對（應付不同卡截短）；支付平台（`GENERIC`：Alipay／WeChat Pay／PayMe 等）必須逐筆確認、不建規則；舊規則項目 `@meal` 現一律入「餐飲」；同 HKD 金額 15 分鐘內不同短訊標示可能重複且不自動入帳；Signal：✅ 已入帳／🔔 待確認；前端「📥 待確認」頁（側欄 badge＋置頂列同步按鈕左邊小鈴鐺＋紅色數字 `#ibBell`，按下到待確認頁；取代原新增支出頁頂橫額）及商戶規則管理 | ✅ |
+| + | 通知自動記帳（第 5 期）：Tasker 轉發銀行短訊（見 `TASKER.md`）→ `action=inbox`；`PARSERS` 支援中銀信用卡、中銀戶口自動轉賬、花旗、安信、中國移動繳費；外幣以 open.er-api.com 換算（`fxRate_`，快取 6 小時）；`Merchants` 規則 auto／ask／ignore，商戶名互相包含（≥6 字元）即配對（應付不同卡截短）；支付平台（`GENERIC`：Alipay／WeChat Pay／PayMe 等）必須逐筆確認、不建規則；舊規則項目 `@meal` 現一律入「餐飲」；同 HKD 金額 15 分鐘內不同短訊標示可能重複且不自動入帳；Signal：✅ 已入帳／🔔 待確認；前端「📥 待確認」頁（頁底「手動貼上短訊」＝轉發器漏送時複製短訊貼上，經 `action=inbox` 處理；「最近收到的通知」＝GET `action=inboxLog` 最近 15 則任何狀態，API_VERSION 12；設定頁同步狀態加「通知轉發器」最後回報 `inboxLast`；側欄 badge＋置頂列同步按鈕左邊小鈴鐺＋紅色數字 `#ibBell`，按下到待確認頁；取代原新增支出頁頂橫額）及商戶規則管理 | ✅ |
 | + | 旅程（第 4 期）：Sheet `Trips`（Name／Start／End／Currency／Note），`Records.Trip` 欄；新增支出選「旅遊」時顯示旅程選單，預設為日期所在旅程或 60 日內出發的旅程（出發前買機票），並切換至旅程預設幣種；短訊自動入帳的旅遊支出按日期自動標記（`tripFor_`）；旅程頁每個旅程為可摺疊卡（標題列：名稱、日期、合計；展開：筆數、每日平均、外幣原額、AA 資訊、按項目分佈、修改；預設展開進行中及最近一個，本次使用期間記住 `S.tripOpen`）；改名同步更新紀錄；修改紀錄可補選旅程 | ✅ |
 | + | 分帳（第 6a 期，側欄 🧾）：活動＋參加者（「我」固定）＋一筆或多筆支出，每筆選付款人及分攤方式（平均〔可剔除部分人〕／按份數／指定金額）；以最小貨幣單位整數計算（`spUnit`，JPY／KRW 無小數），餘數按小數部分大者分配，各人差額加總必為 0；建議轉帳為**最少次數**（`spMinTx`：子集 DP 求最多「加總為 0」的分組，轉帳數＝有差額人數−組數，組內貪婪；超過 16 人改用貪婪），每筆可標記已收／已付（`data.done` 以 `from\|to\|amt` 為 key，金額改變即重置）；「確認」設 `settledAt`（狀態 未確認→待清數，開始計催收），複製圖示按鈕（`spCopy`，不儲存）複製 WhatsApp 文字（`spText`：英文精簡，日期 DD/MM，「我」寫作 Me，含合計、各筆支出〔多於一筆時〕、各人應付〔相同時只寫 Each pays〕及轉帳）；「我」的份額按每筆支出寫入 Records（ID `<splitId>_<expId>`，`SplitID` 欄，備註「AA：活動·內容」），待收／待付不計入支出；修改分帳紀錄會轉到分帳頁；常用參加者（localStorage `splitPeople`）；本機 `splitsCfg`＋`splitsPending` 樂觀寫入，30 秒／回前台重試；看門狗確認後 3 日仍有**涉及「我」**的轉帳未清經 Signal 提醒一次（`SPLIT_SENT`） | ✅ |
 | + | 分帳計算工具模式：參加者可移除「我」（由現有紀錄／通知轉來的除外），即只計算朋友之間的最少轉帳，不寫入記帳簿、不計入待收、不觸發催收；快選第一位為「我」以便加回 | ✅ |
@@ -120,6 +120,7 @@
 - GET `action=items` → `{items:{section:[[name, emoji], …]}}`
 - GET `action=inbox` → 待確認列表；`action=merchants` → 規則；`action=trips` → 旅程及統計
 - GET `action=settings` → `{settings}`；`action=summary&from&to` → `{months:{ym:{類別:金額, _n}}}`；`action=search&q&from[&f]` → `{rows（最近 300 筆）, count, total[, filtered]}`（`f`＝JSON 篩選標籤，API_VERSION 10）
+- GET `action=inboxLog` → 最近 15 則轉發（任何狀態，API_VERSION 12）；`info` 另回傳 `inboxLast`
 - GET `action=export&from&to` → `{rows}`（全部欄位，API_VERSION 11）；`action=info&fresh=1` 清除伺服器快取
 - GET `action=list&month=yyyy-MM` → `{rows}`（含 `splitId`）；`action=splits` → `{rows}`
 - GET `action=fixed` → `{rows}`

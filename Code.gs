@@ -1,7 +1,7 @@
 /**** 記帳簿 後端：貼到 Google Sheet → 擴充功能 → Apps Script ****/
 // TOKEN 不再寫在程式碼內：請到「專案設定 → 指令碼屬性」新增屬性 TOKEN（值 = 你的密碼）。
 // 之後更新 Code.gs 可直接整份貼上；更換 TOKEN 只需改屬性值，毋須重新部署。
-const API_VERSION = 11;            // 前端用來檢查 Code.gs 是否已更新
+const API_VERSION = 12;            // 前端用來檢查 Code.gs 是否已更新
 const BACKUP_FOLDER = '記帳簿備份'; // Google Drive 備份資料夾名稱
 const BACKUP_KEEP = 8;            // 保留最近 8 份（約 2 個月）
 const REC = 'Records', FIX = 'Fixed', ITEMS = 'Items', SETTINGS = 'Settings', INBOX = 'Inbox', MERCH = 'Merchants';
@@ -237,7 +237,7 @@ function doGet(e) {
     if (p.action === 'info') return { sheetUrl: SpreadsheetApp.getActive().getUrl(), version: API_VERSION,
       lastBackup: props_().getProperty('LAST_BACKUP') || '', serverTime: new Date().toISOString(),
       signal: signalReady_(), lastWatchdog: props_().getProperty('LAST_WATCHDOG') || '',
-      notifyQueue: JSON.parse(props_().getProperty('NOTIFY_QUEUE') || '[]').length };
+      notifyQueue: JSON.parse(props_().getProperty('NOTIFY_QUEUE') || '[]').length, inboxLast: props_().getProperty('INBOX_LAST') || '' };
     if (p.action === 'list') return { rows: recRows_().filter(r => r[0] && ym_(r[1]) === p.month).map(recObj_) };
     if (p.action === 'fixed') return { rows: rows_(FIX).filter(r => r[0]).map(fixObj_) };
     if (p.action === 'settings') return { settings: settings_() };
@@ -262,6 +262,12 @@ function doGet(e) {
         currency: r[5], origAmount: Number(r[6]), amount: Number(r[7]), date: ymd_(r[8]), suggest: JSON.parse(r[11] || '{}')
       }));
       return { rows };
+    }
+    if (p.action === 'inboxLog') { // 最近收到的轉發（任何狀態），供前端檢查轉發器及解析是否正常（API_VERSION 12）
+      const sh = sheet_(INBOX); if (!sh) return { rows: [] };
+      return { rows: sh.getDataRange().getValues().slice(1).slice(-15).reverse().map(r => ({
+        ts: r[1] instanceof Date ? r[1].toISOString() : String(r[1]), source: String(r[2] || ''), raw: String(r[3] || '').slice(0, 120),
+        merchant: String(r[4] || ''), amount: Number(r[7]) || 0, status: String(r[9] || '') })) };
     }
     if (p.action === 'merchants') {
       const sh = sheet_(MERCH); if (!sh) return { rows: [] };

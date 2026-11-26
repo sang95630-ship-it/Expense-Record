@@ -360,6 +360,12 @@ select[data-cur]{pointer-events:none}
 .cur-sheet.exp .cur-more{display:none}
 #qrBox svg{display:block;width:220px;height:220px;margin:4px auto 14px;background:#fff;border-radius:14px;padding:8px;box-sizing:border-box}
 .sr-more{display:block;width:100%;margin:12px 0 4px}
+.ib-tools{margin-top:12px}
+.ib-log{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:13px;padding:8px 0;border-bottom:.5px solid var(--line)}
+.ib-log:last-child{border-bottom:0}
+.ib-log .st{font-weight:600;white-space:nowrap}
+.ib-log .st.skip{color:var(--danger)} .ib-log .st.ok{color:var(--st-ok)}
+.ib-log .tx{color:var(--muted);grid-column:1/-1;word-break:break-all}
 .rule-hint{margin:8px 4px;padding-left:18px;line-height:1.7}
 .rule-hint b{color:var(--ink);font-weight:600}
 .ask-sheet #askMsg{font-size:17px;font-weight:600;margin:6px 2px 4px;line-height:1.45}
@@ -584,6 +590,11 @@ a{color:inherit}
     <!-- Inbox：通知自動記帳 -->
     <section class="page" id="p-inbox" hidden>
       <div id="ibBody"></div>
+      <details class="card anim raw ib-tools" id="ibPaste"><summary>手動貼上短訊</summary><div>
+        <p class="hint small" style="margin:6px 0 8px">轉發器漏送時，可長按銀行短訊 → 複製，貼在這裏送出，效果與自動轉發相同（同一短訊不會重複入帳）。</p>
+        <textarea class="text-in" id="ibPasteTx" rows="3" placeholder="例如：安信:信用卡尾數1234於26/11/2026在…消費HKD 100.00…"></textarea>
+        <button class="primary" id="ibPasteGo" type="button" style="margin-top:8px">送出</button></div></details>
+      <details class="card anim raw ib-tools" id="ibLog"><summary>最近收到的通知</summary><div id="ibLogBody"><p class="muted small">載入中…</p></div></details>
       <h2>商戶規則</h2>
       <div class="card" id="ruleBody"><p class="muted small">載入中…</p></div>
       <ul class="hint small rule-hint">
@@ -1014,7 +1025,7 @@ function queueOp(op, r, upd){
   return o;
 }
 let flushing = false, inFlight = null, syncErr = '';
-const API_VERSION = 11; // 與 Code.gs 的 API_VERSION 對應
+const API_VERSION = 12; // 與 Code.gs 的 API_VERSION 對應
 // 同步健康狀態（只存本機）：okAt 最後成功同步時間；err／errAt 最近一次錯誤
 function noteHealth(ok, err){
   const h = lsGet('syncHealth', {});
@@ -2095,6 +2106,34 @@ async function renderRules(){
       : '<p class="muted small">未有規則。確認入帳時選擇「自動入帳」即會建立。</p>';
   } catch(e){ box.innerHTML = `<p class="muted small">${esc(errMsg(e))}</p>`; }
 }
+// 手動貼上短訊：送到與轉發器相同的 action=inbox
+const IB_ST = { pending:'已加入待確認', auto:'已自動入帳', ignored:'已按規則略過', skip:'未能辨認此短訊格式', dup:'此短訊之前已收過' };
+$('#ibPasteGo').addEventListener('click', async () => {
+  const tx = $('#ibPasteTx').value.trim(); if (!tx) return toast('請先貼上短訊內容');
+  const btn = $('#ibPasteGo'); btn.disabled = true;
+  try {
+    const j = await post({ action:'inbox', text:tx, sender:'手動貼上', ts:Date.now() });
+    toast(IB_ST[j.status] || `已送出（${j.status}）`, 3200);
+    if (j.status !== 'skip') $('#ibPasteTx').value = '';
+    if (j.status === 'auto'){ delete S.cache[todayStr().slice(0,7)]; dropSummary(); }
+    ibAt = 0; await loadInbox(true); renderInbox(); ibLogLoaded = false; if ($('#ibLog').open) renderIbLog();
+  } catch(e){ toast(errMsg(e)); }
+  btn.disabled = false;
+});
+// 最近收到的通知（任何狀態）：檢查轉發器有否送到、伺服器能否辨認
+let ibLogLoaded = false;
+const IB_LBL = { pending:['待確認',''], auto:['已入帳','ok'], confirmed:['已確認','ok'], dismissed:['已略過',''], ignored:['規則略過',''], skip:['未能辨認','skip'], split:['已分帳','ok'] };
+async function renderIbLog(){
+  if (ibLogLoaded) return; const box = $('#ibLogBody');
+  try {
+    const j = await get({ action:'inboxLog' }); ibLogLoaded = true;
+    box.innerHTML = j.rows?.length ? j.rows.map(r => { const t = new Date(r.ts), [l, c] = IB_LBL[r.status] || [r.status, ''];
+      return `<div class="ib-log"><span class="st ${c}">${l}</span><span>${isNaN(t) ? '' : `${ddmm(ymd(t))} ${pad(t.getHours())}:${pad(t.getMinutes())}`}${r.merchant ? `，${esc(r.merchant)}` : ''}${r.amount ? ` ${money(r.amount)}` : ''}</span><span class="tx">${esc(r.raw)}</span></div>`; }).join('')
+      : '<p class="muted small">伺服器從未收到任何轉發。請檢查 Tasker 設定（見 TASKER.md）。</p>';
+  } catch(e){ box.innerHTML = `<p class="muted small">${e.message === 'unknown action' ? '請更新 Code.gs（版本 12）並重新部署' : esc(errMsg(e))}</p>`; }
+}
+$('#ibLog').addEventListener('toggle', e => { if (e.target.open) renderIbLog(); });
+
 $('#ruleBody').addEventListener('change', async e => {
   if (!e.target.matches('[data-mode]')) return;
   const m = e.target.closest('[data-m]').dataset.m;
@@ -2930,7 +2969,9 @@ async function renderHealth(){
     const sig = j.signal === undefined ? ['—', ''] : j.signal ? [`已設定${j.notifyQueue ? `（${j.notifyQueue} 則待補發）` : ''}`, j.notifyQueue ? 'bad' : 'good'] : ['未設定（可選）', ''];
     const wdAge = j.lastWatchdog ? (Date.now() - Date.parse(j.lastWatchdog)) / 36e5 : null;
     const wd = j.lastWatchdog ? [relTime(j.lastWatchdog), wdAge > 3 ? 'bad' : 'good'] : ['未啟動（請執行 setup 一次）', j.version >= 4 ? 'bad' : ''];
-    box.innerHTML = `<dl class="health" style="display:contents">${base}${row('伺服器版本', ...ver)}${row('最後備份', ...bk)}${row('看門狗', ...wd)}${row('Signal 通知', ...sig)}</dl>`;
+    const ibAge = j.inboxLast ? (Date.now() - Date.parse(j.inboxLast)) / 864e5 : null;
+    const ibl = j.inboxLast === undefined ? ['—', ''] : j.inboxLast ? [relTime(j.inboxLast), ibAge > 3 ? 'bad' : 'good'] : ['從未收到', 'bad'];
+    box.innerHTML = `<dl class="health" style="display:contents">${base}${row('伺服器版本', ...ver)}${row('最後備份', ...bk)}${row('看門狗', ...wd)}${row('通知轉發器', ...ibl)}${row('Signal 通知', ...sig)}</dl>`;
   } catch(e){
     box.innerHTML = `<dl class="health" style="display:contents">${base}${row('伺服器', esc(errMsg(e)), 'bad')}</dl>`;
   }
