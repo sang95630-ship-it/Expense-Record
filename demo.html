@@ -1155,6 +1155,8 @@ button:active:not(:disabled){transform:scale(.96)}
   const SETTINGS = { 'budget.var': 6500, 'budget.total': 9000 };
   const hh = h => new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, 12).toISOString();
   const INBOX = [
+    { id: 'ib0', ts: hh(13), source: '信用卡 7708', merchant: 'AlipayHK*P', currency: 'HKD', origAmount: 88, amount: 88, date: today,
+      raw: '（示範）信用卡尾數7708於今日在AlipayHK*P消費HKD 88.00。', suggest: { section: '日常', item: '餐飲', remark: '', generic: true } },
     { id: 'ib1', ts: hh(12), source: '信用卡 8166', merchant: 'WECHAT PAY HONG KONG', currency: 'HKD', origAmount: 68.5, amount: 68.5, date: today,
       raw: '（示範）您的信用卡 8166 在 "WECHAT PAY HONG KONG" 有一項簽賬，金額為 HKD 68.50。', suggest: { section: '日常', item: '餐飲', remark: '', generic: true } },
     { id: 'ib2', ts: hh(9), source: '信用卡 0015', merchant: 'ACME COFFEE ROASTERS', currency: 'HKD', origAmount: 42, amount: 42, date: today,

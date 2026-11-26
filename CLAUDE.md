@@ -99,7 +99,7 @@
 
 ## 體驗版（demo.html）
 - 供分享給他人一次性體驗的單一 HTML：`python3 tools/build_demo.py` 由 index.html（新設計）產生 `demo.html`；經典版體驗檔可用 `python3 tools/build_demo.py classic.html classic-demo.html`（未納入 repo）
-- `tools/demo-mock.js`：頁內模擬伺服器（攔截 fetch，實作所有 GET／POST action）＋虛構示範數據（近 6 個月紀錄、5 個固定項目、東京旅程、2 筆待確認）；匯率用固定值
+- `tools/demo-mock.js`：頁內模擬伺服器（攔截 fetch，實作所有 GET／POST action）＋虛構示範數據（近 6 個月紀錄、5 個固定項目、東京旅程、3 筆待確認（含 AlipayHK））；匯率用固定值
 - 以記憶體取代 localStorage／sessionStorage：不會讀寫正式版的設定、TOKEN 或佇列（即使在同一網域開啟），重新整理即重設
 - 移除 PWA（manifest、圖示、Service Worker），隱藏 Details、連結表單、首次設定步驟及同步狀態；頁頂顯示體驗版說明
 
