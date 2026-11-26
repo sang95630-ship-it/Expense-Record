@@ -808,7 +808,7 @@ const dateLabel = s => { const [y,m,d] = s.split('-').map(Number); const w = '�
 let cfg = JSON.parse(localStorage.getItem('expenseCfg') || '{}');
 const S = { page:'input', section:'日常', item:null, cycle:'M', summary:null, trendN:12, srRange:12, searchRows:[],
   settings:(() => { try { return JSON.parse(localStorage.getItem('settingsCfg')) || {}; } catch(e){ return {}; } })(), date:todayStr(), expYm:todayStr().slice(0,7),
-  anYm:shiftYm(todayStr().slice(0,7),-1), anMode:'section', cache:cacheProxy(), fixed:null, editing:null, cur:'HKD' };
+  anYm:todayStr().slice(0,7), anMode:'section', cache:cacheProxy(), fixed:null, editing:null, cur:'HKD' };
 
 /* ---------- utils ---------- */
 let toastT;
@@ -1021,7 +1021,7 @@ function dayRollover(){
   const t = todayStr(), prev = S.lastDay; if (t === prev) return; S.lastDay = t;
   if (S.date === prev){ S.date = t; renderDate(); }
   const pm = prev.slice(0,7), tm = t.slice(0,7);
-  if (pm !== tm){ if (S.expYm === pm) S.expYm = tm; if (S.anYm === shiftYm(pm,-1)) S.anYm = shiftYm(tm,-1); }
+  if (pm !== tm){ if (S.expYm === pm) S.expYm = tm; if (S.anYm === pm) S.anYm = tm; }
   refresh();
 }
 setInterval(dayRollover, 60000);
@@ -1062,6 +1062,7 @@ function go(p){
     else { toast('請先連結 Google Sheet'); go('settings'); }
     return;
   }
+  if (p === 'analysis' && S.page !== 'analysis') S.anYm = todayStr().slice(0,7); // 每次進入每月分析都由本月開始
   S.page = p;
   $$('.page').forEach(s => s.hidden = s.id !== 'p-'+p);
   $$('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.page === p));
@@ -2266,7 +2267,12 @@ function renderSplits(){
       <div><div class="muted small">AA 待收</div><div class="total">${money(round2(due))}</div></div>
       <div><div class="muted small">待付</div><div class="delta">${money(round2(owe))}</div></div></div>
       <p class="hint small" style="margin-top:6px">待收／待付不計入支出；記帳簿只記錄你的份額。</p></div>` : ''}
-    <div style="margin-top:12px">${cards || `<div class="card"><p class="muted">未有分帳。<br>一人先付全數：新增分帳 → 加入朋友 → 輸入金額。<br>多人各付不同項目：每筆支出選擇付款人，最後合併計算最少轉帳。<br>朋友之間分帳（你沒有參與）：移除「我」即成計算工具，不會入帳。</p></div>`}</div>`;
+    <div style="margin-top:12px">${cards || `<div class="card"><p class="muted" style="margin:0">未有分帳。</p></div>`}</div>
+    <ul class="hint small rule-hint">
+      <li><b>一人先付全數</b>：新增分帳 → 加入朋友 → 輸入金額</li>
+      <li><b>多人各付不同項目</b>：每筆支出選擇付款人，最後合併計算最少轉帳</li>
+      <li><b>朋友之間分帳</b>（你沒有參與）：移除「我」即成計算工具，不會入帳</li>
+    </ul>`;
   if (!S.spLoaded && cfg.url){ S.spLoaded = true; const before = JSON.stringify(S.splits); syncSplits().then(() => { if (S.page === 'splits' && !S.spEdit && JSON.stringify(S.splits) !== before) renderSplits(); }); }
 }
 const SP_SECS = ['旅遊','日常','其他'];
