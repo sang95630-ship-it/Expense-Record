@@ -1481,8 +1481,8 @@ function renderTabs(){
   $('#fixedHint').hidden = $('#cycleSeg').hidden = !isFx;
   $$('#cycleSeg [data-cy]').forEach(b => b.classList.toggle('active', b.dataset.cy === S.cycle));
   const m = Number(S.date.slice(5,7));
-  $('#fixedHint').textContent = S.cycle === 'Y' ? `年繳：由明年起每年 ${m} 月 1 號自動入帳；加價或取消可到 Expense 頁修改。`
-    : '固定項目由下個月 1 號起自動入帳；加價或取消可到 Expense 頁修改。';
+  $('#fixedHint').textContent = S.cycle === 'Y' ? `年繳：由明年起每年 ${m} 月 1 號自動入帳；加價或取消可到「支出概覽」→「固定項目設定」修改。`
+    : '固定項目由下個月 1 號起自動入帳；加價或取消可到「支出概覽」→「固定項目設定」修改。';
   $('#aaBtn').hidden = S.section === '固定';
   $('#cur').disabled = S.section === '固定'; $('#curWrap').classList.toggle('locked', S.section === '固定');
   renderRemarkChips();
@@ -1703,7 +1703,7 @@ async function save(){
 
 // 復原：從本機佇列移除，並把內容填回表格方便修改
 function undoSave(rec){
-  if (!getQ().some(x => x.id === rec.id) || inFlight === rec.id) return toast('已同步，請到 Expense 頁刪除');
+  if (!getQ().some(x => x.id === rec.id) || inFlight === rec.id) return toast('已同步，請到「支出概覽」修改或刪除');
   setQ(getQ().filter(x => x.id !== rec.id)); delete hold[rec.id];
   const log = lsGet('remarkLog', {}); if (log[rec.id]){ delete log[rec.id]; lsSet('remarkLog', log); }
   S.section = rec.section; S.item = rec.item; S.date = rec.date; S.cycle = rec.cycle || 'M';
