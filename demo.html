@@ -317,6 +317,14 @@ details.raw .fold-btn{width:22px;height:22px}
 /* overlays */
 .overlay{position:fixed;inset:0;background:rgba(16,22,26,.45);display:none;z-index:60;align-items:flex-end;justify-content:center}
 .overlay.show{display:flex}
+#askOverlay{z-index:80}
+.rule-hint{margin:8px 4px;padding-left:18px;line-height:1.7}
+.rule-hint b{color:var(--ink);font-weight:600}
+.ask-sheet #askMsg{font-size:17px;font-weight:600;margin:6px 2px 4px;line-height:1.45}
+.ask-sheet #askSub{margin:0 2px 14px}
+.ask-sheet #askSub:empty{display:none}
+.ask-sheet .row-btns>button{flex:1}
+.ask-sheet .primary.danger{background:var(--danger);border-color:transparent;color:#fff}
 .sheet{background:var(--surface);width:100%;max-width:440px;border-radius:22px 22px 0 0;padding:14px 18px calc(18px + env(safe-area-inset-bottom,0px))}
 @media (min-width:900px){ .overlay{align-items:center} .sheet{border-radius:22px} }
 .sheet-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
@@ -774,7 +782,12 @@ button:active:not(:disabled){transform:scale(.96)}
       <div id="ibBody"></div>
       <h2>商戶規則</h2>
       <div class="card" id="ruleBody"><p class="muted small">載入中…</p></div>
-      <p class="hint small" style="margin:8px 4px">「自動」：之後同一商戶直接入帳並經 Signal 通知；「詢問」：每次預填，按確認即可；「略過」：不記帳（例如已由固定項目入帳的電話費）。支付平台（AlipayHK、WeChat Pay 等）無法得知真正商戶，必須逐筆確認。</p>
+      <ul class="hint small rule-hint">
+        <li><b>自動</b>：之後同一商戶直接入帳，並經 Signal 通知</li>
+        <li><b>詢問</b>：每次預填類別及項目，按確認即可</li>
+        <li><b>略過</b>：不記帳（例如已由固定項目入帳的電話費）</li>
+        <li><b>支付平台</b>（AlipayHK、WeChat Pay 等）看不到真正商戶，必須逐筆確認</li>
+      </ul>
     </section>
 
     <!-- Trips -->
@@ -923,6 +936,13 @@ button:active:not(:disabled){transform:scale(.96)}
       <button class="ghost" id="reAA" type="button">轉為分帳</button>
       <button class="primary" id="reSave" type="button">儲存變更</button>
     </div>
+  </div>
+</div>
+
+<div class="overlay" id="askOverlay">
+  <div class="sheet ask-sheet" role="alertdialog" aria-modal="true" aria-labelledby="askMsg">
+    <p id="askMsg"></p><p class="hint small" id="askSub"></p>
+    <div class="row-btns"><button class="ghost" id="askNo" type="button">取消</button><button class="primary" id="askYes" type="button">確定</button></div>
   </div>
 </div>
 
@@ -1234,6 +1254,20 @@ function toast(msg, ms = 2400, action){
   }
   t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), ms);
 }
+/* 程式內確認框：ask(訊息, {sub, yes, no, danger}) → Promise<boolean>；點背景或取消 = false */
+function ask(msg, o = {}){
+  const ov = $('#askOverlay'), yes = $('#askYes'), no = $('#askNo');
+  $('#askMsg').textContent = msg; $('#askSub').textContent = o.sub || '';
+  yes.textContent = o.yes || '確定'; no.textContent = o.no || '取消'; yes.classList.toggle('danger', !!o.danger);
+  ov.classList.add('show'); setTimeout(() => yes.focus(), 50);
+  return new Promise(res => {
+    const done = v => { ov.classList.remove('show'); yes.onclick = no.onclick = ov.onclick = null; removeEventListener('keydown', key); res(v); };
+    const key = e => { if (e.key === 'Escape') done(false); };
+    yes.onclick = () => done(true); no.onclick = () => done(false);
+    ov.onclick = e => { if (e.target === ov) done(false); };
+    addEventListener('keydown', key);
+  });
+}
 function errMsg(e){
   if (e.message === 'unauthorized') return '密碼不正確，請到設定頁檢查。';
   if (e.message === 'noconfig') return '尚未連結 Google Sheet，請到設定頁完成連結。';
@@ -1309,12 +1343,12 @@ async function loadMonth(ym){
   const hit = DC.m[ym];
   if (hit) {
     perfHit('list', 'disk');
-    const rows = normRows(hit.rows); S.cache[ym] = rows;
-    revalidate('m:' + ym, () => get({action:'list', month:ym}).then(j => (j.rows = normRows(j.rows), learnRemarks(j.rows), j.rows)), fresh => { S.cache[ym] = fresh; }, rows);
+    const rows = applyOps(normRows(hit.rows), ym); S.cache[ym] = rows;
+    revalidate('m:' + ym, () => get({action:'list', month:ym}).then(j => (j.rows = normRows(j.rows), learnRemarks(j.rows), j.rows)), fresh => { S.cache[ym] = applyOps(fresh, ym); }, rows);
     return rows;
   }
   revalDone.add('m:' + ym); // 剛向伺服器取得，毋須再背景更新
-  const j = await get({action:'list', month:ym}); j.rows = normRows(j.rows); learnRemarks(j.rows); return (S.cache[ym] = j.rows);
+  const j = await get({action:'list', month:ym}); j.rows = normRows(j.rows); learnRemarks(j.rows); return (S.cache[ym] = applyOps(j.rows, ym));
 }
 // 伺服器資料 + 本機未同步紀錄（待同步者標示 pending）
 async function monthRows(ym){ const rows = await loadMonth(ym); return [...rows, ...getQ().filter(r => r.date.slice(0,7) === ym).map(r => ({...r, pending:true}))]; }
@@ -1332,6 +1366,28 @@ async function loadFixed(){
 /* ---------- offline queue ---------- */
 const getQ = () => JSON.parse(localStorage.getItem('expenseQueue') || '[]');
 const setQ = q => { localStorage.setItem('expenseQueue', JSON.stringify(q)); updateSync(); };
+/* 已同步紀錄的修改／刪除佇列（localStorage opQueue）：[{op:'update'|'delete', id, rec（修改後完整紀錄）, upd, yms, hold}]
+   即時套用到畫面（applyOps），背景與新增佇列一同送出；同一紀錄只保留最後一個操作 */
+const getOps = () => lsGet('opQueue', []);
+const setOps = q => { lsSet('opQueue', q); updateSync(); };
+const pendingN = () => getQ().length + getOps().length;
+function applyOps(rows, ym){
+  const ops = getOps(); if (!ops.length || !rows) return rows;
+  const ids = new Set(ops.map(o => o.id)), out = rows.filter(x => !ids.has(x.id));
+  ops.forEach(o => { if (o.op === 'update' && o.rec.date.slice(0,7) === ym) out.push({...o.rec, pending:true}); });
+  return out;
+}
+function queueOp(op, r, upd){
+  const yms = new Set([r.date.slice(0,7)]); if (upd?.date) yms.add(upd.date.slice(0,7));
+  const prev = getOps().find(o => o.id === r.id); prev?.yms.forEach(y => yms.add(y));
+  const rec = {...r, ...(upd || {})}; delete rec.pending;
+  const o = { op, id:r.id, rec, upd:{...(prev?.upd || {}), ...(upd || {})}, yms:[...yms], hold: op === 'delete' ? Date.now() + UNDO_MS + 300 : 0 };
+  setOps([...getOps().filter(x => x.id !== r.id), o]);
+  o.yms.forEach(ym => { if (S.cache[ym]) S.cache[ym] = applyOps(S.cache[ym], ym); });
+  S.searchRows = op === 'delete' ? S.searchRows.filter(x => x.id !== r.id) : S.searchRows.map(x => x.id === r.id ? {...rec, pending:true} : x);
+  if (o.hold) setTimeout(flushQ, UNDO_MS + 350); else flushQ();
+  return o;
+}
 let flushing = false, inFlight = null, syncErr = '';
 const API_VERSION = 10; // 與 Code.gs 的 API_VERSION 對應
 // 同步健康狀態（只存本機）：okAt 最後成功同步時間；err／errAt 最近一次錯誤
@@ -1348,12 +1404,12 @@ const relTime = iso => {
 };
 const hold = {}; // 剛儲存的紀錄暫緩同步（id → 到期時間），以便「復原」
 function updateSync(){
-  const n = getQ().length;
+  const n = pendingN();
   $('#syncState').textContent = !n ? (revalN ? '更新中…' : '') : syncErr ? `${n} 筆未同步（${syncErr}）` : flushing ? `同步中…（${n}）` : `${n} 筆待同步`;
 }
 // 背景同步：逐筆送出，成功即從佇列移除（以 id 移除，避免與新增的紀錄互相覆蓋）
 async function flushQ(){
-  if (flushing || !cfg.url || !getQ().length) return;
+  if (flushing || !cfg.url || !pendingN()) return;
   if (navigator.onLine === false){ syncErr = '離線'; updateSync(); return; }
   flushing = true; syncErr = ''; updateSync();
   let synced = 0;
@@ -1368,11 +1424,25 @@ async function flushQ(){
       if (S.cache[ym] && !S.cache[ym].some(x => x.id === r.id)) { S.cache[ym].push({...r, createdAt:new Date().toISOString(), fixedId:r.section === '固定' ? 'pending' : ''}); persistMonth(ym); }
       if (r.section === '固定') dropFixed();
     }
+    let o; // 修改／刪除（新增全部送出後才處理，避免改動仍在新增佇列的紀錄）
+    while (!syncErr && !getQ().length && (o = getOps().find(x => !(x.hold > Date.now())))){
+      inFlight = o.id;
+      try { await post(o.op === 'delete' ? {action:'deleteRecord', id:o.id} : {action:'updateRecord', id:o.id, ...o.upd}); }
+      catch(e){
+        if (e.message === 'unauthorized' || e instanceof TypeError){ syncErr = e.message === 'unauthorized' ? '密碼錯誤' : '離線'; noteHealth(false, syncErr); break; }
+        toast(`未能${o.op === 'delete' ? '刪除' : '修改'}「${o.rec.item}」：${e.message}`, 4500); noteHealth(false, e.message); // 伺服器拒絕（例如紀錄已被刪除）：放棄此操作
+        setOps(getOps().filter(x => x !== o && x.id !== o.id)); o.yms.forEach(ym => delete S.cache[ym]); synced++; continue;
+      }
+      const cur = getOps().find(x => x.id === o.id);
+      if (cur && JSON.stringify(cur) === JSON.stringify(o)) setOps(getOps().filter(x => x.id !== o.id)); // 送出期間未再被修改才移除
+      synced++; noteHealth(true); dropSummary();
+      o.yms.forEach(ym => { if (S.cache[ym]){ S.cache[ym] = applyOps(S.cache[ym].map(x => { if (x.id !== o.id) return x; const y = {...x}; delete y.pending; return y; }), ym); persistMonth(ym); } });
+    }
   } finally { inFlight = null; flushing = false; updateSync(); }
   if (synced && S.page !== 'input') refresh();
   else if (synced) renderRecent();
 }
-setInterval(() => { if (getQ().length) flushQ(); }, 30000);
+setInterval(() => { if (pendingN()) flushQ(); }, 30000);
 // 跨日：App 留在背景過夜，回到前台或每分鐘檢查；日期未被手動改過才自動改為今天，看本月／上月的頁面亦順延
 S.lastDay = todayStr();
 function dayRollover(){
@@ -1393,7 +1463,7 @@ async function manualSync(){
   try {
     while (flushing) await new Promise(r => setTimeout(r, 200));
     syncErr = ''; await flushQ();
-    const n = getQ().length;
+    const n = pendingN();
     resetCache(); dropFixed(); dropSummary(); loadInbox(true);
     if (n) toast(`${n} 筆未能同步（${syncErr || '請稍後再試'}）`);
     else {
@@ -1609,15 +1679,25 @@ async function loadRates(){
   return fxLive;
 }
 const fmtRate = r => String(Number(r.toPrecision(4)));
+/* 手動匯率：fxManual[幣種] = {rate, at}；超過 FX_MANUAL_DAYS 日自動失效，改回參考匯率（舊格式純數字：由今天起計） */
+const FX_MANUAL_DAYS = 14;
+function fxMan(c){
+  const m = lsGet('fxManual', {}); let v = m[c]; if (v == null) return null;
+  if (typeof v === 'number'){ v = m[c] = { rate:v, at:Date.now() }; lsSet('fxManual', m); }
+  if (!(v.rate > 0) || Date.now() - v.at > FX_MANUAL_DAYS * 864e5){ delete m[c]; lsSet('fxManual', m); return null; }
+  return v;
+}
+const tsDdmm = t => { const d = new Date(t); return `${pad(d.getDate())}/${pad(d.getMonth()+1)}`; };
 function setCur(code){
   S.cur = CUR[code] ? code : 'HKD'; $('#cur').value = S.cur; $('#curLabel').textContent = CUR[S.cur][1]; $('#curWrap').classList.toggle('foreign', S.cur !== 'HKD');
   const foreign = S.cur !== 'HKD'; $('#fxRow').hidden = !foreign;
   if (!foreign) return;
   $('#fxCode').textContent = S.cur;
-  const manual = lsGet('fxManual', {})[S.cur], live = fxLive?.rates?.[S.cur];
+  const man = fxMan(S.cur), manual = man?.rate, live = fxLive?.rates?.[S.cur];
   const r = manual || live || CUR[S.cur][3];
   $('#fxRate').value = fmtRate(r);
-  $('#fxSrc').textContent = manual ? '使用你上次手動輸入的匯率（點此改用參考匯率）' : live ? `參考匯率（${fxLive.date}，open.er-api.com）` : '離線後備匯率，請按實際交易匯率修改';
+  const left = man ? Math.max(1, Math.ceil((man.at + FX_MANUAL_DAYS * 864e5 - Date.now()) / 864e5)) : 0;
+  $('#fxSrc').textContent = manual ? `已記住你於 ${tsDdmm(man.at)} 輸入的匯率，${left} 日後失效（點此改用參考匯率）` : live ? `參考匯率（${fxLive.date}，open.er-api.com）` : '離線後備匯率，請按實際交易匯率修改';
   updHkd();
   if (!fxLive || fxLive.date !== todayStr()) loadRates().then(() => { if (S.cur === code && !manual) setCur(code); });
 }
@@ -1629,7 +1709,7 @@ $('#cur').addEventListener('change', e => { setCur(e.target.value); if (S.sectio
 $('#fxRate').addEventListener('input', e => {
   e.target.value = e.target.value.replace(/[^\d.]/g,'').replace(/(\..*)\./g,'$1');
   const r = parseFloat(e.target.value), m = lsGet('fxManual', {});
-  if (r > 0){ m[S.cur] = r; lsSet('fxManual', m); $('#fxSrc').textContent = '已記住此匯率'; }
+  if (r > 0){ m[S.cur] = { rate:r, at:Date.now() }; lsSet('fxManual', m); $('#fxSrc').textContent = `已記住此匯率（${tsDdmm(Date.now())}，${FX_MANUAL_DAYS} 日內有效）`; }
   updHkd();
 });
 $('#fxSrc').addEventListener('click', () => { const m = lsGet('fxManual', {}); delete m[S.cur]; lsSet('fxManual', m); setCur(S.cur); });
@@ -2053,7 +2133,7 @@ function reItems(sec, keep){
   $('#reItem').innerHTML = names.map(n => `<option>${esc(n)}</option>`).join('');
   if (keep) $('#reItem').value = keep;
 }
-function reRateDefault(c){ return lsGet('fxManual', {})[c] || fxLive?.rates?.[c] || CUR[c][3]; }
+function reRateDefault(c){ return fxMan(c)?.rate || fxLive?.rates?.[c] || CUR[c][3]; }
 function reUpd(){
   const c = $('#reCur').value, a = num($('#reAmt').value), r = c === 'HKD' ? 1 : parseFloat($('#reRate').value);
   $('#reRateF').hidden = c === 'HKD';
@@ -2096,13 +2176,11 @@ $('#reSave').addEventListener('click', async () => {
     currency:cur, fxRate:rate, origAmount:orig, amount:round2(orig*rate) };
   const pend = getQ().find(x => x.id === r.id);
   if (pend && inFlight === r.id) return toast('此紀錄正在同步，請稍後再修改');
+  if (!pend && inFlight === r.id) return toast('此紀錄正在同步，請稍後再修改');
   const btn = $('#reSave'); btn.disabled = true;
   try {
     if (pend) setQ(getQ().map(x => x.id === r.id ? {...x, ...upd} : x));
-    else {
-      await post({action:'updateRecord', id:r.id, ...upd}); dropSummary();
-      delete S.cache[r.date.slice(0,7)]; delete S.cache[date.slice(0,7)];
-    }
+    else { queueOp('update', r, upd); dropSummary(); } // 即時更新畫面，背景同步（離線亦可）
     const log = lsGet('remarkLog', {}); delete log[r.id]; lsSet('remarkLog', log);
     learnRemarks([{...r, ...upd, createdAt:r.createdAt || new Date().toISOString()}]);
     closeRec(); toast(`已更新：${upd.item} ${showAmt(upd)}`); refresh();
@@ -2112,10 +2190,24 @@ $('#reSave').addEventListener('click', async () => {
 $('#reDel').addEventListener('click', async () => {
   const r = S.reEdit, pend = getQ().find(x => x.id === r.id);
   if (pend && inFlight === r.id) return toast('此紀錄正在同步，請稍後再刪除');
-  if (!confirm(`刪除 ${ddmm(r.date)} 的「${r.item} ${showAmt(r)}」？`)) return;
-  if (pend){ setQ(getQ().filter(x => x.id !== r.id)); closeRec(); toast('已刪除（未同步的紀錄）'); return refresh(); }
-  try { await post({action:'deleteRecord', id:r.id}); delete S.cache[r.date.slice(0,7)]; dropSummary(); closeRec(); toast('已刪除'); refresh(); }
-  catch(err){ toast(errMsg(err)); }
+  if (!pend && inFlight === r.id) return toast('此紀錄正在同步，請稍後再刪除');
+  const what = `${ddmm(r.date)}「${r.item} ${showAmt(r)}」`;
+  closeRec();
+  if (pend){ // 未同步：直接從佇列移除，復原即放回
+    setQ(getQ().filter(x => x.id !== r.id)); refresh();
+    return toast(`已刪除 ${what}`, UNDO_MS, { label:'復原', fn:() => { setQ([...getQ(), pend]); refresh(); flushQ(); toast('已復原'); } });
+  }
+  const prevOp = getOps().find(o => o.id === r.id);
+  queueOp('delete', r); dropSummary(); refresh();
+  toast(`已刪除 ${what}`, UNDO_MS, { label:'復原', fn:() => {
+    const o = getOps().find(x => x.id === r.id);
+    if (!o || o.op !== 'delete' || inFlight === r.id) return toast('已同步，未能復原');
+    setOps(getOps().filter(x => x.id !== r.id).concat(prevOp ? [prevOp] : []));
+    const back = prevOp ? {...prevOp.rec, pending:true} : {...r};
+    const ym = back.date.slice(0,7); if (S.cache[ym] && !S.cache[ym].some(x => x.id === r.id)) S.cache[ym] = [...S.cache[ym], back];
+    if (prevOp) flushQ();
+    refresh(); toast('已復原');
+  } });
 });
 
 /* ---------- fixed item editor ---------- */
@@ -2143,7 +2235,7 @@ $('#fxSave').addEventListener('click', async () => {
 });
 $('#fxToggle').addEventListener('click', async () => {
   const f = S.editing;
-  if (f.active && !confirm(`停用「${f.remark || f.item}」？下個月起不再自動入帳，過往紀錄會保留。`)) return;
+  if (f.active && !await ask(`停用「${f.remark || f.item}」？`, { sub:'下個月起不再自動入帳，過往紀錄會保留。', yes:'停用', danger:true })) return;
   try {
     await post({action:'toggleFixed', id:f.id, active:!f.active});
     dropFixed(); closeFixed(); toast(f.active ? '已停用，下個月起不再自動入帳' : '已重新啟用'); renderExpense();
@@ -2343,7 +2435,7 @@ $('#ibBody').addEventListener('click', async e => {
       delete S.cache[r.date.slice(0,7)]; dropSummary(); learnRemarks([{id, section:f('section'), item:j.item, remark:f('remark').trim(), createdAt:new Date().toISOString()}]);
       toast(`已入帳：${j.item} ${r.currency !== 'HKD' ? curMoney(r.origAmount, r.currency) : money(r.amount)}`);
     } else {
-      const ign = !r.suggest?.generic && confirm(`以後也略過「${r.merchant}」？\n（例如已由固定項目入帳的電話費）`);
+      const ign = !r.suggest?.generic && await ask(`以後也略過「${r.merchant}」？`, { sub:'例如已由固定項目入帳的電話費。', yes:'以後也略過', no:'只略過這次' });
       await post({action:'dismissInbox', id, remember: ign ? 'ignore' : ''});
       toast(ign ? '已略過，並記住此商戶' : '已略過');
     }
@@ -2369,7 +2461,7 @@ $('#ruleBody').addEventListener('change', async e => {
 });
 $('#ruleBody').addEventListener('click', async e => {
   if (!e.target.matches('[data-del]')) return;
-  const m = e.target.closest('[data-m]').dataset.m; if (!confirm(`刪除「${m}」的規則？`)) return;
+  const m = e.target.closest('[data-m]').dataset.m; if (!await ask(`刪除「${m}」的規則？`, { sub:'之後此商戶的通知會再列入待確認。', yes:'刪除', danger:true })) return;
   try { await post({action:'deleteRule', merchant:m}); toast('已刪除規則'); renderRules(); } catch(err){ toast(errMsg(err)); }
 });
 
@@ -2807,7 +2899,7 @@ spBody.addEventListener('change', e => {
   }
 });
 spBody.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'spNewP'){ e.preventDefault(); spAddPerson(e.target.value, true); } });
-spBody.addEventListener('click', e => {
+spBody.addEventListener('click', async e => {
   const b = e.target.closest('button, [data-spopen]'); if (!b) return;
   const sp = S.spEdit;
   if (b.id === 'spNew'){ S.spEdit = spNew(); spRenderEd(); scrollTo({ top:0 }); return; }
@@ -2841,7 +2933,7 @@ spBody.addEventListener('click', e => {
   if (b.id === 'spSettle') return spSave(true);
   if (b.id === 'spCopy') return spCopy();
   if (b.id === 'spDel'){
-    if (!confirm(`刪除「${sp.name || '此分帳'}」及其記帳紀錄？`)) return;
+    if (!await ask(`刪除「${sp.name || '此分帳'}」？`, { sub:'連同記帳簿內「我」的份額紀錄一併刪除。', yes:'刪除', danger:true })) return;
     const pend = spPend(); pend[sp.id] = { del:true }; lsSet('splitsPending', pend);
     S.splits = S.splits.filter(x => x.id !== sp.id); lsSet('splitsCfg', S.splits);
     S.spEdit = null; renderSplits(); flushSplits(); toast('已刪除分帳');
@@ -2986,7 +3078,7 @@ $('#srBody').addEventListener('click', e => {
 /* ---------- settings ---------- */
 function renderSettings(){
   $('#cfgUrl').value = cfg.url || ''; $('#cfgToken').value = cfg.token || '';
-  const n = getQ().length;
+  const n = pendingN();
   $('#cfgStatus').innerHTML = cfg.sheetUrl
     ? `已連結。<a href="${esc(cfg.sheetUrl)}" target="_blank" rel="noopener">開啟 Google Sheet</a>${n ? `，${n} 筆支出待同步` : ''}`
     : '尚未連結。';
@@ -3032,7 +3124,7 @@ $('#itSave').addEventListener('click', async () => {
   btn.disabled = false;
 });
 $('#itReset').addEventListener('click', async () => {
-  if (!confirm(`把「${IT.sec}」還原為預設項目？`)) return;
+  if (!await ask(`把「${IT.sec}」還原為預設項目？`, { sub:'你自訂的名稱、圖示及次序會被取代。', yes:'還原' })) return;
   try { await saveItems([]); toast(`已還原「${IT.sec}」預設項目`); } catch(e){ toast(errMsg(e)); }
 });
 // 啟動時於背景讀取伺服器上的自訂項目
@@ -3158,7 +3250,7 @@ function renderPerf(){
 $('#perfBox').addEventListener('click', e => { if (e.target.id === 'perfClear'){ perfLog = []; try { localStorage.removeItem('perfLog'); } catch(_){} renderPerf(); } });
 
 async function renderHealth(){
-  const box = $('#healthBox'), h = lsGet('syncHealth', {}), n = getQ().length;
+  const box = $('#healthBox'), h = lsGet('syncHealth', {}), n = pendingN();
   const row = (k, v, cls = '') => `<dt>${k}</dt><dd class="${cls}">${v}</dd>`;
   const base = row('待同步', n ? `${n} 筆` : '0 筆', n ? 'bad' : 'good')
     + row('最後成功同步', relTime(h.okAt))
