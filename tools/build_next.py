@@ -197,8 +197,8 @@ button:active:not(:disabled){transform:scale(.96)}
 .form{gap:14px}
 .date-btn{background:var(--surface-2);border-radius:var(--r-field);padding:12px 15px;font-size:17px}
 .date-btn .today{font-size:15px;color:var(--primary);font-weight:600}
-.amount-row{border-bottom:0;padding:8px 0 2px;align-items:center}
-#amount{font-size:56px;font-weight:600;letter-spacing:-.025em}
+.amount-row{border-bottom:0;padding:0;align-items:center}
+#amount{font-size:56px;font-weight:600;letter-spacing:-.025em;line-height:1.1}
 .cur-wrap{background:var(--surface-2);border-radius:999px;font-size:17px;font-weight:600;padding:7px 12px 7px 14px}
 .save-row .ghost{flex:0 0 auto}
 
