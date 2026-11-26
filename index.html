@@ -331,6 +331,33 @@ details.raw .fold-btn{width:22px;height:22px}
 .overlay{position:fixed;inset:0;background:rgba(16,22,26,.45);display:none;z-index:60;align-items:flex-end;justify-content:center}
 .overlay.show{display:flex}
 #askOverlay{z-index:80}
+/* 幣種表單（方案 3）：常用 4 個大按鈕＋其他幣種清單；初始只露出 2 行，向上拉跟手指長高，到頂後清單才捲動 */
+select[data-cur]{pointer-events:none}
+#curOverlay{z-index:72}
+.cur-sheet{display:flex;flex-direction:column;padding:22px 0 0;overflow:hidden;max-height:none;touch-action:none;transition:height .34s cubic-bezier(.2,.8,.2,1)}
+.cur-sheet.drag{transition:none}
+.cur-head{padding:0 18px;margin-bottom:8px}
+.cur-search{display:none;padding:0 16px 8px}
+.cur-search .text-in{padding:9px 12px;font-size:15px}
+.cur-sheet.exp .cur-search{display:block}
+.cur-chips{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:0 16px 8px}
+.cur-chips button{border:0;background:var(--surface-2);border-radius:14px;padding:9px 0 7px;color:var(--ink);cursor:pointer}
+.cur-chips button b{display:block;font-size:16px}
+.cur-chips button small{font-size:11.5px;color:var(--muted)}
+.cur-chips button.on{box-shadow:inset 0 0 0 2px var(--primary);color:var(--primary)}
+.cur-body{flex:1;overflow:hidden;overscroll-behavior:contain;padding-bottom:calc(12px + env(safe-area-inset-bottom,0px))}
+.cur-sheet.exp .cur-body{overflow-y:auto;touch-action:pan-y}
+.cur-grp{font-size:12.5px;color:var(--muted);padding:6px 20px 4px}
+.cur-row{display:flex;align-items:center;gap:12px;width:100%;height:44px;padding:0 20px;border:0;border-bottom:.5px solid var(--line);background:none;color:var(--ink);font-size:15px;text-align:left;cursor:pointer}
+.cur-row .sym{width:52px;font-weight:700;flex-shrink:0}
+.cur-row .nm{flex:1}
+.cur-row .cd{color:var(--muted);font-size:13px}
+.cur-row.on{color:var(--primary);font-weight:600}
+.cur-row.on::after{content:"✓";margin-left:8px;font-weight:700}
+.cur-empty{padding:18px 20px;color:var(--muted);font-size:14px}
+.cur-more{position:absolute;left:50%;bottom:calc(8px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);border:0;border-radius:12px;padding:4px 12px;
+  background:var(--surface);color:var(--muted);font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,.08);cursor:pointer}
+.cur-sheet.exp .cur-more{display:none}
 #qrBox svg{display:block;width:220px;height:220px;margin:4px auto 14px;background:#fff;border-radius:14px;padding:8px;box-sizing:border-box}
 .sr-more{display:block;width:100%;margin:12px 0 4px}
 .rule-hint{margin:8px 4px;padding-left:18px;line-height:1.7}
@@ -779,7 +806,7 @@ button:active:not(:disabled){transform:scale(.96)}
       <div class="grid-clip"><div class="grid" id="itemGrid"></div></div>
       <div class="card form">
         <button class="date-btn" id="dateBtn"><span>📅</span><span id="dateText"></span><span class="today" id="todayTag"></span></button>
-        <div class="amount-row"><label class="cur-wrap" id="curWrap"><span id="curLabel">HK$</span><span class="caret">▼</span><select id="cur" aria-label="幣種"></select></label><input id="amount" type="text" inputmode="decimal" placeholder="0" autocomplete="off" aria-label="金額"></div>
+        <div class="amount-row"><label class="cur-wrap" id="curWrap"><span id="curLabel">HK$</span><span class="caret">▼</span><select id="cur" aria-label="幣種" data-cur></select></label><input id="amount" type="text" inputmode="decimal" placeholder="0" autocomplete="off" aria-label="金額"></div>
         <div class="fx-row" id="fxRow" hidden>匯率：1 <span id="fxCode"></span> =
           <input class="text-in" id="fxRate" type="text" inputmode="decimal" aria-label="匯率"> HKD
           <b id="fxHkd"></b><span class="small" id="fxSrc" style="flex-basis:100%"></span></div>
@@ -835,7 +862,7 @@ button:active:not(:disabled){transform:scale(.96)}
           <label class="field" style="grid-column:1/-1">名稱<input class="text-in" id="tfName" type="text" maxlength="20" placeholder="例如 2026-12 東京" autocomplete="off"></label>
           <label class="field">出發<input class="text-in" id="tfStart" type="date"></label>
           <label class="field">回程<input class="text-in" id="tfEnd" type="date"></label>
-          <label class="field" style="grid-column:1/-1">預設幣種<select class="text-in" id="tfCur"></select></label>
+          <label class="field" style="grid-column:1/-1">預設幣種<select class="text-in" id="tfCur" data-cur></select></label>
         </div>
         <div class="row-btns"><button class="ghost" id="tfCancel" type="button" hidden>取消</button><button class="primary" id="tfSave" type="button">儲存旅程</button></div>
         <p class="hint small" style="margin-top:8px">旅程期間在「旅遊」記帳會自動標記此旅程並切換至預設幣種；出發前購買的機票、酒店亦可手動選擇旅程。</p>
@@ -978,7 +1005,7 @@ button:active:not(:disabled){transform:scale(.96)}
       <label class="field">日期<input class="text-in" id="reDate" type="date"></label>
       <label class="field">類別<select class="text-in" id="reSec"></select></label>
       <label class="field">項目<select class="text-in" id="reItem"></select></label>
-      <label class="field">幣種<select class="text-in" id="reCur"></select></label>
+      <label class="field">幣種<select class="text-in" id="reCur" data-cur></select></label>
       <label class="field">金額<input class="text-in" id="reAmt" type="text" inputmode="decimal"></label>
       <label class="field" id="reRateF">匯率（1 外幣 = ? HKD）<input class="text-in" id="reRate" type="text" inputmode="decimal"></label>
     </div>
@@ -998,6 +1025,16 @@ button:active:not(:disabled){transform:scale(.96)}
     <div class="sheet-head"><strong>揀選圖示</strong><button class="link-btn" id="emoClose" type="button">關閉</button></div>
     <div class="emo-grid" id="emoGrid"></div>
     <div class="emo-in"><input class="text-in" id="emoIn" type="text" maxlength="8" placeholder="或輸入任何 emoji" autocomplete="off"><button class="primary" id="emoUse" type="button">使用</button></div>
+  </div>
+</div>
+
+<div class="overlay" id="curOverlay">
+  <div class="sheet cur-sheet" id="curSheet" role="dialog" aria-label="選擇幣種">
+    <div class="sheet-head cur-head"><strong>選擇幣種</strong><button class="link-btn" id="curDone" type="button">完成</button></div>
+    <div class="cur-search"><input class="text-in" id="curQ" type="search" placeholder="搜尋幣種（名稱或代碼）" autocomplete="off"></div>
+    <div class="cur-chips" id="curChips"></div>
+    <div class="cur-body" id="curBody"></div>
+    <button class="cur-more" id="curMore" type="button">向上拉看更多 ↑</button>
   </div>
 </div>
 
@@ -2626,7 +2663,7 @@ function spRenderEd(){
       <div class="re-grid" style="margin-top:10px">
         <label class="field" style="grid-column:1/-1">活動名稱<input class="text-in" data-sp="name" value="${esc(sp.name)}" maxlength="30" placeholder="例如 週五打邊爐（可留空）" autocomplete="off"></label>
         <label class="field">日期<input class="text-in" type="date" data-sp="date" value="${sp.date}"></label>
-        <label class="field">幣種<select class="text-in" data-sp="currency">${$('#cur').innerHTML}</select></label>
+        <label class="field">幣種<select class="text-in" data-sp="currency" data-cur>${$('#cur').innerHTML}</select></label>
         ${foreign ? `<label class="field">匯率（1 ${sp.currency} = ? HKD）<input class="text-in" data-sp="fxRate" inputmode="decimal" value="${fmtRate(sp.fxRate)}"></label>` : ''}
         <label class="field"${foreign ? '' : ' style="grid-column:1/-1"'}>旅程<select class="text-in" data-sp="trip">${tripOpts(sp.trip)}</select></label>
       </div>
@@ -3248,8 +3285,77 @@ addEventListener('beforeinstallprompt', e => { e.preventDefault(); instEvt = e; 
 addEventListener('appinstalled', () => { instEvt = null; renderInstall(); toast('已安裝，長按主畫面圖示即見捷徑', 3200); });
 $('#instBtn').addEventListener('click', async () => { if (!instEvt) return; instEvt.prompt(); try { await instEvt.userChoice; } catch(e){} instEvt = null; renderInstall(); });
 
+/* ---------- 幣種表單（取代原生選單）：所有 select[data-cur] 共用 ---------- */
+const CSH = { sel:null, exp:false };
+function curSheetRender(){
+  const v = CSH.sel.value, q = $('#curQ').value.trim().toLowerCase();
+  const hit = c => !q || [c[0], c[1], c[2]].some(x => String(x).toLowerCase().includes(q));
+  $('#curChips').innerHTML = CUR_MAIN.map(c => `<button type="button" data-c="${c[0]}" class="${c[0] === v ? 'on' : ''}"><b>${c[1]}</b><small>${c[2]}</small></button>`).join('');
+  $('#curChips').hidden = !!q;
+  const rows = (q ? [...CUR_MAIN, ...CUR_MORE] : CUR_MORE).filter(hit);
+  $('#curBody').innerHTML = (q ? '' : '<div class="cur-grp">其他幣種</div>')
+    + (rows.length ? rows.map(c => `<button type="button" class="cur-row${c[0] === v ? ' on' : ''}" data-c="${c[0]}"><span class="sym">${c[1]}</span><span class="nm">${c[2]}</span><span class="cd">${c[0]}</span></button>`).join('')
+      : '<div class="cur-empty">找不到相符的幣種</div>');
+}
+const curMaxH = () => Math.round(innerHeight * .88);
+function curMinH(){ // 標題＋常用＋「其他幣種」＋2 行＋提示
+  const sh = $('#curSheet'), r = $('#curBody').querySelectorAll('.cur-row')[1];
+  return r ? Math.min(curMaxH(), Math.round(r.getBoundingClientRect().bottom - sh.getBoundingClientRect().top + 44)) : 320;
+}
+function curSetH(h, anim = true){ const sh = $('#curSheet'); sh.classList.toggle('drag', !anim); sh.style.height = h + 'px'; }
+function curExpand(on){ CSH.exp = on; $('#curSheet').classList.toggle('exp', on); if (!on) $('#curBody').scrollTop = 0; curSetH(on ? curMaxH() : CSH.min); }
+function openCurSheet(sel){
+  if (!sel || sel.disabled) return;
+  CSH.sel = sel; $('#curQ').value = ''; CSH.exp = false;
+  const sh = $('#curSheet'); sh.classList.remove('exp'); sh.style.height = 'auto';
+  curSheetRender(); $('#curOverlay').classList.add('show');
+  CSH.min = curMinH(); curSetH(CSH.min, false);
+}
+function closeCurSheet(){ $('#curOverlay').classList.remove('show'); $('#curQ').blur(); }
+function pickCur(code){
+  const sel = CSH.sel; closeCurSheet(); if (!sel || sel.value === code) return;
+  sel.value = code; sel.dispatchEvent(new Event('input', { bubbles:true })); sel.dispatchEvent(new Event('change', { bubbles:true }));
+}
+// 按幣種欄（select 本身不接收點按，由所在的 label 代為打開表單）
+document.addEventListener('click', e => {
+  const host = e.target.closest('label'); const sel = host?.querySelector('select[data-cur]'); if (!sel) return;
+  e.preventDefault(); openCurSheet(sel);
+});
+$('#curChips').addEventListener('click', e => { const b = e.target.closest('[data-c]'); if (b) pickCur(b.dataset.c); });
+$('#curBody').addEventListener('click', e => { const b = e.target.closest('[data-c]'); if (b) pickCur(b.dataset.c); });
+$('#curDone').addEventListener('click', closeCurSheet);
+$('#curMore').addEventListener('click', () => curExpand(true));
+$('#curQ').addEventListener('input', curSheetRender);
+$('#curSheet').addEventListener('wheel', e => { if (!CSH.exp && e.deltaY > 0) curExpand(true); }, { passive:true });
+// 拖動：未展開時整個表單跟手指；已展開時，清單捲到頂再向下拉才縮回；向下拉過低即關閉
+(() => {
+  const sh = $('#curSheet'), body = $('#curBody'); let st = null;
+  sh.addEventListener('touchstart', e => {
+    if (e.touches.length !== 1 || e.target.closest('input')) return;
+    st = { y:e.touches[0].clientY, t:performance.now(), h:sh.offsetHeight, drag:null, inBody:!!e.target.closest('.cur-body') };
+  }, { passive:true });
+  sh.addEventListener('touchmove', e => {
+    if (!st) return; const dy = e.touches[0].clientY - st.y;
+    if (st.drag === null){
+      if (Math.abs(dy) < 6) return;
+      st.drag = !(CSH.exp && st.inBody && (body.scrollTop > 0 || dy < 0));
+      if (st.drag){ st.y = e.touches[0].clientY; st.t = performance.now(); return; }
+    }
+    if (!st.drag) return;
+    e.preventDefault();
+    const h = Math.max(60, Math.min(curMaxH(), st.h - dy)); st.last = h; st.dy = dy; curSetH(h, false);
+  }, { passive:false });
+  sh.addEventListener('touchend', () => {
+    if (!st) return; const s0 = st; st = null; if (!s0.drag || s0.last == null) return;
+    const v = s0.dy / Math.max(1, performance.now() - s0.t), h = s0.last; // v>0 向下
+    if (h < CSH.min * .7 || (v > .8 && !CSH.exp)) { curSetH(CSH.min); return closeCurSheet(); }
+    if (v < -.3 || (v <= .3 && h > (CSH.min + curMaxH()) / 2)) curExpand(true);
+    else curExpand(false);
+  });
+})();
+
 /* ---------- global ---------- */
-document.addEventListener('keydown', e => { if (e.key === 'Escape'){ closePicker(); closeFixed(); closeRec(); closeDrawer(); } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape'){ closeCurSheet(); closePicker(); closeFixed(); closeRec(); closeDrawer(); } });
 $$('.overlay').forEach(o => o.addEventListener('click', e => { if (e.target === o) o.classList.remove('show'); }));
 window.addEventListener('online', flushQ);
 
