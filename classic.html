@@ -361,6 +361,7 @@ select[data-cur]{pointer-events:none}
 #qrBox svg{display:block;width:220px;height:220px;margin:4px auto 14px;background:#fff;border-radius:14px;padding:8px;box-sizing:border-box}
 .sr-more{display:block;width:100%;margin:12px 0 4px}
 .ib-tools{margin-top:12px}
+.ib-app{display:inline-flex;align-items:center;min-height:36px;margin:2px 0 4px;color:var(--primary);font-size:14px;font-weight:600;text-decoration:none}
 .ib-log{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:13px;padding:8px 0;border-bottom:.5px solid var(--line)}
 .ib-log:last-child{border-bottom:0}
 .ib-log .st{font-weight:600;white-space:nowrap}
@@ -2043,6 +2044,14 @@ const itemOpts = (sec, sel) => (sel = sel === MEAL ? '餐飲' : sel, [])
   .concat(SECTIONS[sec].map(x => [x[0], `${x[1]} ${x[0]}`]))
   .concat(sel && sel !== MEAL && !SECTIONS[sec].some(x => x[0] === sel) ? [[sel, sel]] : [])
   .map(([v,l]) => `<option value="${esc(v)}"${v === sel ? ' selected' : ''}>${esc(l)}</option>`).join('');
+/* 支付平台的待確認卡：Android 上提供「打開 AlipayHK／WeChat」按鈕，對照 App 內交易紀錄的真正商戶後填寫備註
+   （intent:// 只適用於 Android Chrome；未安裝該 App 時不會有反應） */
+const PAY_APPS = [[/ALIPAY/i, 'hk.alipay.wallet', 'AlipayHK'], [/WECHAT|WEIXIN/i, 'com.tencent.mm', 'WeChat']];
+function payAppLink(merchant){
+  if (!/Android/i.test(navigator.userAgent)) return '';
+  const a = PAY_APPS.find(([re]) => re.test(merchant || '')); if (!a) return '';
+  return `<a class="ib-app" href="intent://#Intent;package=${a[1]};end">打開 ${a[2]} 查看真正商戶 ›</a>`;
+}
 async function renderInbox(){
   const box = $('#ibBody'); box.innerHTML = '<p class="muted">載入中…</p>';
   const rows = await loadInbox(true);
@@ -2059,6 +2068,7 @@ async function renderInbox(){
         <label class="field">項目<select class="text-in" data-f="item">${itemOpts(sec, sg.item || (sec === '日常' ? '餐飲' : ''))}</select></label>
       </div>
       <label class="field">備註<input class="text-in" data-f="remark" type="text" value="${esc(sg.remark || '')}" placeholder="例如店名" autocomplete="off"></label>
+      ${sg.generic ? payAppLink(r.merchant) : ''}
       ${sg.generic ? '' : `<label class="field">以後「${esc(r.merchant)}」<select class="text-in" data-f="remember">
         <option value="auto"${sg.rule ? '' : ' selected'}>自動入帳為此類別</option><option value="ask"${sg.rule ? ' selected' : ''}>每次詢問（預填此類別）</option><option value="">不記住</option></select></label>`}
       <div class="row-btns"><button class="ghost" type="button" data-act="skip">略過</button><button class="ghost" type="button" data-act="split" aria-label="AA 分帳">AA</button><button class="primary" type="button" data-act="ok">確認入帳</button></div>

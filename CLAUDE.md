@@ -147,7 +147,7 @@
 - **AlipayHK／WeChat Pay 商戶及餘額付款**（2026-11-26 記錄）：銀行短訊只見「ALIPAY／WECHAT PAY」，看不到真正商戶，必須逐筆確認；用錢包餘額付款更完全沒有短訊而漏記。方案：Tasker 讀取兩個 App 的付款通知（AlipayHK；微信「微信支付」服務號）→ `action=inbox`（註明來源 App）→ Code.gs 新增兩款解析規則抽商戶／金額 → 套用商戶規則；與銀行短訊同金額 10 分鐘內配對合併防重複。**待用家提供兩款 App 的通知樣本**（通知欄截圖或 Tasker `%evtprm2`／`%evtprm3`）才可開始
   - 2026-11-26 更新：用家以 AlipayHK 付款（餐飲）後**沒有系統通知**，付款紀錄只在 App 內信箱。待用家檢查 AlipayHK App 內「通知設定」及 Android 通知權限；如確實沒有推送，通知方案不可行，改為建議 AlipayHK 預設以信用卡（例如安信）付款，令每筆都有銀行短訊入「待確認」（只缺真正商戶名稱，須手動填備註）；錢包餘額付款仍須手動記帳
   - 2026-11-27 更新：AlipayHK App 內「通知 → 交易通知」有完整紀錄（商戶全名，例如 `Prime Wisdom Development Limited`、`RICEY CATERING`；「付款成功」、HKD 金額、付款方式 `UNIONPAY CARD ****7708`；亦有「退款已到賬」）；同一筆 HK$725 對應安信短訊「AlipayHK*P」。待用家於該頁右上「設定」開啟交易通知推送，再提供系統通知樣本（通知欄截圖或 Tasker `%evtprm2`／`%evtprm3`）；解析目標：商戶＋金額＋卡尾號，與銀行短訊按金額＋卡尾號 10 分鐘內合併；退款通知可考慮自動沖銷
-  - 2026-11-27：Android 通知已允許（類別「支付寶通知」「AlipayHK」均開）；App 內「通知 → 設定」只有「清除全部通知」及「暫未有訂閱通知」，沒有交易推送開關。待用家實際付款測試是否彈出系統通知；如無，後備方案為待確認卡（AlipayHK 類）加「打開 AlipayHK」按鈕（Android intent，套件 `hk.alipay.wallet`，未驗證）以便對照後手動填商戶
+  - 2026-11-27：Android 通知已允許（類別「支付寶通知」「AlipayHK」均開）；App 內「通知 → 設定」只有「清除全部通知」及「暫未有訂閱通知」，沒有交易推送開關。待用家實際付款測試是否彈出系統通知；如無，後備方案為待確認卡（AlipayHK 類）加「打開 AlipayHK」按鈕（Android intent，套件 `hk.alipay.wallet`，未驗證）以便對照後手動填商戶；✅ 已加入（`payAppLink`／`PAY_APPS`，亦支援 WeChat `com.tencent.mm`，只在 Android 顯示）
   - 已知：OPPO Find X8 Ultra（ColorOS）會殺 Tasker，26/11 21:01 安信短訊因此漏收；已提供設定步驟（關「自動最佳化權限授權」、自動啟動、多工鎖定、關「休眠待機最佳化」、Tasker Run In Foreground）
 - 每次與用家對話開始時，如此項仍未解決，簡短提醒一次
 
